@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LandGrab</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- HOME SCREEN -->
+  <div id="screen-home" class="screen active">
+    <div class="title-block">
+      <h1>LANDGRAB</h1>
+      <p class="subtitle">14th Century Europe — Colonize. Develop. Dominate.</p>
+    </div>
+    <div class="menu">
+      <button class="menu-btn" id="btn-new-game">New Game</button>
+      <button class="menu-btn" id="btn-load-game">Load Game</button>
+    </div>
+  </div>
+
+  <!-- NEW GAME SCREEN -->
+  <div id="screen-new-game" class="screen">
+    <h2>New Game</h2>
+    <form id="form-new-game">
+      <label>Lord's Name
+        <input type="text" id="input-name" placeholder="e.g. Edmund of York" required />
+      </label>
+      <label>Map Width <span class="hint">(10–100)</span>
+        <input type="number" id="input-width" value="40" min="10" max="100" />
+      </label>
+      <label>Map Height <span class="hint">(10–80)</span>
+        <input type="number" id="input-height" value="30" min="10" max="80" />
+      </label>
+      <label>Seed <span class="hint">(leave blank for random)</span>
+        <input type="number" id="input-seed" placeholder="random" />
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="menu-btn">Begin</button>
+        <button type="button" class="menu-btn secondary" id="btn-back-home">Back</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- LOAD GAME SCREEN -->
+  <div id="screen-load-game" class="screen">
+    <h2>Load Game</h2>
+    <div id="save-list"></div>
+    <button class="menu-btn secondary" id="btn-back-home-2">Back</button>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="screen-game" class="screen">
+    <div id="game-header">
+      <span id="hud-name"></span>
+      <span id="hud-turn">Turn 1</span>
+      <span id="hud-pos"></span>
+      <span id="hud-gold">💰 100</span>
+    </div>
+    <canvas id="map-canvas"></canvas>
+    <div id="game-footer">
+      <div id="movement-pad">
+        <button class="dir-btn" data-dx="-1" data-dy="-1">↖</button>
+        <button class="dir-btn" data-dx="0"  data-dy="-1">↑</button>
+        <button class="dir-btn" data-dx="1"  data-dy="-1">↗</button>
+        <button class="dir-btn" data-dx="-1" data-dy="0">←</button>
+        <button class="dir-btn wait-btn" data-dx="0" data-dy="0">·</button>
+        <button class="dir-btn" data-dx="1"  data-dy="0">→</button>
+        <button class="dir-btn" data-dx="-1" data-dy="1">↙</button>
+        <button class="dir-btn" data-dx="0"  data-dy="1">↓</button>
+        <button class="dir-btn" data-dx="1"  data-dy="1">↘</button>
+      </div>
+      <div id="message-log"></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
