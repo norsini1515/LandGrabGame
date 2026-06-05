@@ -78,7 +78,7 @@ FastAPI is in the dependency list for a future Python backend + React frontend s
 ### Financial Instruments as Physical Tokens
 
 - Optional variant: futures and bonds appear as collectible tokens on the map
-- Players must physically move to acquire them
+- Players must physically move to acquire them, still requires purchase
 - Adds spatial dimension to financial play; may feel gimmicky
 - *Status: optional variant, implement after core financial layer is working*
 
@@ -112,7 +112,7 @@ FastAPI is in the dependency list for a future Python backend + React frontend s
 These were raised and accepted in principle but explicitly deferred:
 
 **Bridges as improvements**
-Roads and canals are milestone 1 improvements. Bridges are a later addition — they add complexity to the water crossing mechanic and require clear river tile rules first.
+Roads are milestone 1 improvements. Bridges and canals are a later addition — they add complexity to the water crossing mechanic and require clear river tile rules first.
 
 **Soil exhaustion**
 Promising mechanic (intensive farming degrades output; incentivizes crop rotation or fallow periods) but adds a `soil_health` field to tiles and a new simulation loop. Deferred until the base farming system is working.
@@ -127,7 +127,7 @@ The Tavern building enables a gambling mechanic. Specifics not designed — left
 The condottieri market features named historical mercenary companies ("3rd Fleet of Genoa", etc.) with distinct characteristics. The flavor and capability table is a design-and-data task, not a code problem. Deferred to content pass.
 
 **Steam release specifics**
-Distribution via Steam is the target but the specific packaging (PyInstaller, cx_Freeze, etc.) and store page requirements are a shipping concern, not a design concern. Deferred.
+Distribution via Steam is the target but the specific packaging (PyInstaller, cx_Freeze, etc.) and store page requirements are a shipping concern, not a design concern. Deferred till MUCH MUCH later haha.
 
 ---
 
@@ -135,7 +135,7 @@ Distribution via Steam is the target but the specific packaging (PyInstaller, cx
 
 Things that have been explicitly discussed and should not be re-litigated:
 
-- **No notebooks**: pure Python scripts and config files only. No Jupyter notebooks in the repo.
+- **No notebooks**: pure Python scripts and config files only. No Jupyter notebooks in the repo. Should be package structure?
 - **Setup script is structure-only**: `setup_project.py` creates directories and files but contains no stub implementations.
 - **Elevation demoted after rivers**: rivers must be extracted from the Perlin heightmap *before* elevation becomes just a bias scalar. This ordering is load-bearing.
 - **Adjacency matrix is column-only**: do not attempt to normalize rows. Only columns have meaning. Row sums are irrelevant.
