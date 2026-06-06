@@ -188,7 +188,7 @@ function clientToTile(clientX, clientY) {
 }
 
 // ── Client-side Dijkstra ──────────────────────────────────────────────────
-const MOVE_COST = { ocean: null, coast: 1, plains: 1, forest: 2, hills: 2, mountains: 3, river: 1 };
+// Uses tile.move_cost from server — no hardcoded cost table needed.
 
 function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
   if (!G) return null;
@@ -209,7 +209,7 @@ function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
       if (nx < 0 || ny < 0 || nx >= G.map_width || ny >= G.map_height) continue;
       const tile = getTile(nx, ny);
       if (!tile) continue;
-      const step = MOVE_COST[tile.terrain];
+      const step = tile.move_cost;
       if (step == null) continue;
       const nc = cost + step;
       if (nc > maxCost) continue;
@@ -373,10 +373,11 @@ function clearHover() {
 function showTooltip(tile, mx, my) {
   const t = getTile(tile.x, tile.y);
   if (!t) return;
-  document.getElementById('tt-terrain').textContent = t.terrain;
+  const modLabel = t.modifier && t.modifier !== 'flat' ? ` (${t.modifier})` : '';
+  document.getElementById('tt-terrain').textContent = t.terrain + modLabel;
   document.getElementById('tt-owner').textContent   = 'Unclaimed';
   const costEl = document.getElementById('tt-cost');
-  const mc = MOVE_COST[t.terrain];
+  const mc = t.move_cost;
   if (mc == null) {
     costEl.textContent = 'Impassable';
     costEl.className   = 'impassable';
@@ -446,9 +447,41 @@ async function doMoveTo(tx, ty) {
 
 // ── Rendering ─────────────────────────────────────────────────────────────
 const TERRAIN_COLORS = {
-  ocean:'#1a3a5c', coast:'#c2b280', plains:'#6b8c42',
-  forest:'#2d5a27', hills:'#8c7340', mountains:'#6e6e6e', river:'#2a6496',
+  // Water
+  ocean:         '#1a3a5c',
+  // Coastal
+  coastal:       '#c2b280',
+  floodplain:    '#8fb560',
+  cliff_coast:   '#7a6a4a',
+  // Land
+  plain:         '#a3b86c',
+  grassland:     '#6b8c42',
+  forest:        '#2d5a27',
+  thick_forest:  '#1e3d1a',
+  jungle:        '#1a5c2a',
+  marsh:         '#5a7a4a',
+  desert:        '#c8a84b',
+  deep_desert:   '#b8863a',
+  tundra:        '#9aaa8a',
+  frozen_tundra: '#d0dce4',
+  // Overlay
+  river:         '#2a6496',
 };
+
+function darkenHex(hex, amount) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, (n >> 16) - amount);
+  const g = Math.max(0, ((n >> 8) & 0xff) - amount);
+  const b = Math.max(0, (n & 0xff) - amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+function tileColor(tile) {
+  const base = TERRAIN_COLORS[tile.terrain] ?? '#333';
+  if (tile.modifier === 'hills')    return darkenHex(base, 30);
+  if (tile.modifier === 'mountain') return darkenHex(base, 60);
+  return base;
+}
 
 function renderMap() {
   if (!G || canvas.width === 0 || canvas.height === 0) return;
@@ -472,7 +505,7 @@ function renderMap() {
     if (tile.x < x0 || tile.x > x1 || tile.y < y0 || tile.y > y1) return;
     ctx.fillStyle = mapMode === 'elevation'
       ? `rgb(${Math.round(tile.elevation*255)},${Math.round(tile.elevation*255)},${Math.round(tile.elevation*255)})`
-      : (TERRAIN_COLORS[tile.terrain] || '#333');
+      : tileColor(tile);
     ctx.fillRect(tile.x * tw, tile.y * th, Math.ceil(tw), Math.ceil(th));
   });
 
@@ -496,7 +529,7 @@ function renderMap() {
   if (hoveredTile) {
     const t   = getTile(hoveredTile.x, hoveredTile.y);
     const lw  = Math.max(1.5, tw * 0.1);
-    const imp = t && MOVE_COST[t.terrain] == null;
+    const imp = t && t.move_cost == null;
     const oor = G?.phase === 'move' && !imp && hoverCost == null;
     ctx.lineWidth   = lw;
     ctx.strokeStyle = (imp || oor) ? 'rgba(180,50,50,0.75)' : 'rgba(240,100,180,0.95)';

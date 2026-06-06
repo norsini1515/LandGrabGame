@@ -2,42 +2,59 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 
-class TerrainType(str, Enum):
-    OCEAN = "ocean"
-    COAST = "coast"
-    PLAINS = "plains"
-    FOREST = "forest"
-    HILLS = "hills"
-    MOUNTAINS = "mountains"
-    RIVER = "river"
+class TerrainType(StrEnum):
+    # Water
+    OCEAN       = "ocean"
+    # Coastal
+    COASTAL     = "coastal"
+    FLOODPLAIN  = "floodplain"
+    CLIFF_COAST = "cliff_coast"
+    # Base terrains
+    PLAIN       = "plain"
+    GRASSLAND   = "grassland"
+    FOREST      = "forest"
+    THICK_FOREST = "thick_forest"
+    JUNGLE      = "jungle"
+    MARSH       = "marsh"
+    DESERT      = "desert"
+    DEEP_DESERT = "deep_desert"
+    TUNDRA      = "tundra"
+    FROZEN_TUNDRA = "frozen_tundra"
+    # Overlay
+    RIVER       = "river"
 
 
-# Movement point cost to enter each terrain type. None = impassable.
-TERRAIN_MOVE_COST: dict[TerrainType, int | None] = {
-    TerrainType.OCEAN:     None,
-    TerrainType.COAST:     1,
-    TerrainType.PLAINS:    1,
-    TerrainType.FOREST:    2,
-    TerrainType.HILLS:     2,
-    TerrainType.MOUNTAINS: 3,
-    TerrainType.RIVER:     1,
-}
+class ModifierType(StrEnum):
+    FLAT     = "flat"
+    HILLS    = "hills"
+    MOUNTAIN = "mountain"
 
 
-class TurnPhase(str, Enum):
-    ROLL = "roll"    # waiting for player to roll dice
-    MOVE = "move"    # dice rolled, player may move
+class TurnPhase(StrEnum):
+    ROLL = "roll"
+    MOVE = "move"
 
 
 class Tile(BaseModel):
     x: int
     y: int
     terrain: TerrainType
+    modifier: ModifierType = ModifierType.FLAT
     elevation: float = Field(ge=0.0, le=1.0)
+    hills_scalar: float = Field(default=0.0, ge=0.0, le=1.0)
+    move_cost: int | None = None  # None = impassable
+
+
+class WorldSettings(BaseModel):
+    climate:       str = "temperate"
+    precipitation: str = "normal"
+    age:           str = "old"
+    fragmentation: str = "default"
 
 
 class Player(BaseModel):
@@ -58,13 +75,15 @@ class GameState(BaseModel):
     turn: int = 1
     phase: TurnPhase = TurnPhase.ROLL
     seed: int
+    world: WorldSettings = Field(default_factory=WorldSettings)
 
 
 class NewGameRequest(BaseModel):
     player_name: str
-    map_width: int = Field(default=40, ge=10, le=100)
-    map_height: int = Field(default=30, ge=10, le=80)
+    map_width: int = Field(default=60, ge=10, le=200)
+    map_height: int = Field(default=40, ge=10, le=150)
     seed: int | None = None
+    world: WorldSettings = Field(default_factory=WorldSettings)
 
 
 class RollResult(BaseModel):
@@ -88,6 +107,7 @@ class MoveToRequest(BaseModel):
 class MoveResult(BaseModel):
     new_position: tuple[int, int]
     terrain: TerrainType
+    modifier: ModifierType
     move_cost: int
     movement_remaining: int
     message: str
@@ -97,6 +117,7 @@ class MoveResult(BaseModel):
 class MoveToResult(BaseModel):
     new_position: tuple[int, int]
     terrain: TerrainType
+    modifier: ModifierType
     total_cost: int
     movement_remaining: int
     path: list[tuple[int, int]]

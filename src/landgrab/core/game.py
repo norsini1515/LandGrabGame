@@ -6,41 +6,64 @@ import heapq
 import json
 import random
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
+from landgrab.core import config
 from landgrab.core.dice import roll
 from landgrab.core.map_gen import generate_map
 from landgrab.models.game_state import (
     EndTurnResult,
     GameState,
+    ModifierType,
     MoveResult,
     MoveToResult,
     Player,
     RollResult,
     SavedGame,
-    TERRAIN_MOVE_COST,
     TerrainType,
     TurnPhase,
+    WorldSettings,
     tile_map,
 )
 
 SAVES_DIR = Path("saves")
 
 _TERRAIN_MESSAGES: dict[TerrainType, str] = {
-    TerrainType.COAST:     "You reach the rocky coastline.",
-    TerrainType.PLAINS:    "You stride across open plains.",
-    TerrainType.FOREST:    "You push through dense woodland.",
-    TerrainType.HILLS:     "You climb the rolling hills.",
-    TerrainType.MOUNTAINS: "You struggle up the steep mountain slopes.",
-    TerrainType.RIVER:     "You ford the rushing river.",
+    TerrainType.COASTAL:      "You reach the rocky coastline.",
+    TerrainType.FLOODPLAIN:   "You wade through the low floodplains.",
+    TerrainType.CLIFF_COAST:  "You clamber along the cliff coast.",
+    TerrainType.PLAIN:        "You stride across open plains.",
+    TerrainType.GRASSLAND:    "You walk through rolling grasslands.",
+    TerrainType.FOREST:       "You push through dense woodland.",
+    TerrainType.THICK_FOREST: "You hack through thick forest.",
+    TerrainType.JUNGLE:       "You struggle through the jungle undergrowth.",
+    TerrainType.MARSH:        "You squelch across the marshy ground.",
+    TerrainType.DESERT:       "You trudge through the sandy desert.",
+    TerrainType.DEEP_DESERT:  "You battle the relentless deep desert.",
+    TerrainType.TUNDRA:       "You crunch across frozen tundra.",
+    TerrainType.FROZEN_TUNDRA:"You struggle through the frozen wasteland.",
+    TerrainType.RIVER:        "You ford the rushing river.",
+}
+
+_MODIFIER_MESSAGES: dict[ModifierType, str] = {
+    ModifierType.FLAT:     "",
+    ModifierType.HILLS:    " The hills slow your march.",
+    ModifierType.MOUNTAIN: " You struggle up the steep mountain slopes.",
 }
 
 
-def new_game(player_name: str, width: int, height: int, seed: int | None) -> GameState:
+def new_game(
+    player_name: str,
+    width: int,
+    height: int,
+    seed: int | None,
+    world: WorldSettings | None = None,
+) -> GameState:
     game_id = str(uuid.uuid4())[:8]
     resolved_seed = seed if seed is not None else random.randint(0, 2**31)
-    tiles = generate_map(width, height, resolved_seed)
+    resolved_world = world or WorldSettings()
+    tiles = generate_map(width, height, resolved_seed, resolved_world)
 
     cx, cy = width // 2, height // 2
     spawn = _find_spawn(tiles, cx, cy)
@@ -54,6 +77,7 @@ def new_game(player_name: str, width: int, height: int, seed: int | None) -> Gam
         tiles=tiles,
         phase=TurnPhase.ROLL,
         seed=resolved_seed,
+        world=resolved_world,
     )
     _save(state)
     return state
@@ -74,7 +98,7 @@ def list_saves() -> list[SavedGame]:
         try:
             data = json.loads(f.read_text())
             state = GameState.model_validate(data)
-            mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat()
+            mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=UTC).isoformat()
             saves.append(SavedGame(
                 game_id=state.game_id,
                 player_name=state.player.name,
@@ -91,16 +115,16 @@ def roll_for_turn(game_id: str) -> RollResult:
     if state.phase != TurnPhase.ROLL:
         raise ValueError("Already rolled this turn.")
 
-    d8 = roll(8)
-    state.player.movement_total = d8
-    state.player.movement_remaining = d8
+    d = roll()
+    state.player.movement_total = d
+    state.player.movement_remaining = d
     state.phase = TurnPhase.MOVE
     _save(state)
 
     return RollResult(
-        roll=d8,
-        movement_total=d8,
-        message=f"You rolled a {d8}! {d8} movement points this turn.",
+        roll=d,
+        movement_total=d,
+        message=f"You rolled a {d}! {d} movement points this turn.",
         game_state=state,
     )
 
@@ -111,7 +135,6 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
 
     if state.phase != TurnPhase.MOVE:
         raise ValueError("Roll the dice before moving.")
-
     if state.player.movement_remaining <= 0:
         raise ValueError("No movement points remaining. End your turn.")
 
@@ -119,11 +142,12 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
     nx = max(0, min(state.map_width - 1, px + dx))
     ny = max(0, min(state.map_height - 1, py + dy))
 
-    # No-op wait move
     if dx == 0 and dy == 0:
+        cur = tmap[(px, py)]
         return MoveResult(
             new_position=(px, py),
-            terrain=tmap[(px, py)].terrain,
+            terrain=cur.terrain,
+            modifier=cur.modifier,
             move_cost=0,
             movement_remaining=state.player.movement_remaining,
             message="You hold your position.",
@@ -131,13 +155,19 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
         )
 
     target = tmap.get((nx, ny))
-    cost = TERRAIN_MOVE_COST.get(target.terrain) if target else None
+    cost   = target.move_cost if target else None
 
     if target is None or cost is None:
-        label = "The ocean blocks your path." if (target and target.terrain == TerrainType.OCEAN) else "Edge of the world."
+        label = (
+            "The ocean blocks your path."
+            if (target and target.terrain == TerrainType.OCEAN)
+            else "Edge of the world."
+        )
+        cur = tmap[(px, py)]
         return MoveResult(
             new_position=(px, py),
-            terrain=tmap[(px, py)].terrain,
+            terrain=cur.terrain,
+            modifier=cur.modifier,
             move_cost=0,
             movement_remaining=state.player.movement_remaining,
             message=label,
@@ -145,12 +175,18 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
         )
 
     if cost > state.player.movement_remaining:
+        cur = tmap[(px, py)]
         return MoveResult(
             new_position=(px, py),
-            terrain=tmap[(px, py)].terrain,
+            terrain=cur.terrain,
+            modifier=cur.modifier,
             move_cost=0,
             movement_remaining=state.player.movement_remaining,
-            message=f"Not enough movement. {target.terrain.value.title()} costs {cost}, you have {state.player.movement_remaining} left.",
+            message=(
+                f"Not enough movement. {target.terrain.value.title()} "
+                f"({target.modifier.value}) costs {cost}, "
+                f"you have {state.player.movement_remaining} left."
+            ),
             game_state=state,
         )
 
@@ -158,16 +194,16 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
     state.player.movement_remaining -= cost
     _save(state)
 
-    terrain = target.terrain
-    remaining = state.player.movement_remaining
-    flavor = _TERRAIN_MESSAGES.get(terrain, "You move forward.")
-    msg = f"{flavor} (cost: {cost} · remaining: {remaining})"
+    flavor = _TERRAIN_MESSAGES.get(target.terrain, "You move forward.")
+    mod_msg = _MODIFIER_MESSAGES.get(target.modifier, "")
+    msg = f"{flavor}{mod_msg} (cost: {cost} · remaining: {state.player.movement_remaining})"
 
     return MoveResult(
         new_position=(nx, ny),
-        terrain=terrain,
+        terrain=target.terrain,
+        modifier=target.modifier,
         move_cost=cost,
-        movement_remaining=remaining,
+        movement_remaining=state.player.movement_remaining,
         message=msg,
         game_state=state,
     )
@@ -199,16 +235,17 @@ def move_to(game_id: str, tx: int, ty: int) -> MoveToResult:
     state.player.movement_remaining -= total_cost
     _save(state)
 
-    terrain = tmap[(tx, ty)].terrain
-    remaining = state.player.movement_remaining
-    flavor = _TERRAIN_MESSAGES.get(terrain, "You arrive.")
-    msg = f"{flavor} (cost: {total_cost} · remaining: {remaining})"
+    target = tmap[(tx, ty)]
+    flavor = _TERRAIN_MESSAGES.get(target.terrain, "You arrive.")
+    mod_msg = _MODIFIER_MESSAGES.get(target.modifier, "")
+    msg = f"{flavor}{mod_msg} (cost: {total_cost} · remaining: {state.player.movement_remaining})"
 
     return MoveToResult(
         new_position=(tx, ty),
-        terrain=terrain,
+        terrain=target.terrain,
+        modifier=target.modifier,
         total_cost=total_cost,
-        movement_remaining=remaining,
+        movement_remaining=state.player.movement_remaining,
         path=path,
         message=msg,
         game_state=state,
@@ -221,7 +258,6 @@ def _dijkstra(
     tx: int, ty: int,
     width: int, height: int,
 ) -> tuple[list[tuple[int, int]] | None, int]:
-    """Return (path, cost) from (sx,sy) to (tx,ty), or (None, 0) if unreachable."""
     dist: dict[tuple[int, int], int] = {(sx, sy): 0}
     prev: dict[tuple[int, int], tuple[int, int] | None] = {(sx, sy): None}
     heap: list[tuple[int, int, int]] = [(0, sx, sy)]
@@ -239,9 +275,9 @@ def _dijkstra(
             tile = tmap.get((nx, ny))
             if tile is None:
                 continue
-            step_cost = TERRAIN_MOVE_COST.get(tile.terrain)  # type: ignore[arg-type]
+            step_cost = getattr(tile, "move_cost", None)
             if step_cost is None:
-                continue  # impassable
+                continue
             new_cost = cost + step_cost
             if new_cost < dist.get((nx, ny), 10**9):
                 dist[(nx, ny)] = new_cost
@@ -278,13 +314,26 @@ def end_turn(game_id: str) -> EndTurnResult:
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 def _find_spawn(tiles: list, cx: int, cy: int) -> tuple[int, int]:
-    preferred = {TerrainType.PLAINS, TerrainType.COAST}
-    by_dist = sorted(
-        [t for t in tiles if t.terrain in preferred],
+    spawn_cfg = config.spawn_params()
+    invalid   = set(spawn_cfg["invalid_terrains"])
+    preferred = set(spawn_cfg["preferred_terrains"])
+
+    # Try preferred first, closest to center
+    preferred_tiles = sorted(
+        [t for t in tiles if t.terrain.value not in invalid and t.terrain.value in preferred],
         key=lambda t: abs(t.x - cx) + abs(t.y - cy),
     )
-    if by_dist:
-        return (by_dist[0].x, by_dist[0].y)
+    if preferred_tiles:
+        return (preferred_tiles[0].x, preferred_tiles[0].y)
+
+    # Fallback: any valid tile
+    valid_tiles = sorted(
+        [t for t in tiles if t.terrain.value not in invalid],
+        key=lambda t: abs(t.x - cx) + abs(t.y - cy),
+    )
+    if valid_tiles:
+        return (valid_tiles[0].x, valid_tiles[0].y)
+
     return (cx, cy)
 
 

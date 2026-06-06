@@ -27,6 +27,7 @@ def create_game(req: NewGameRequest) -> GameState:
         width=req.map_width,
         height=req.map_height,
         seed=req.seed,
+        world=req.world,
     )
 
 
