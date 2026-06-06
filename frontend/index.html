@@ -115,26 +115,16 @@
     <!-- Main game content (map + sidebar) -->
     <div id="game-content">
 
-      <!-- Left: scrollable map + log -->
+      <!-- Left: scrollable map + collapsible log -->
       <div id="game-left">
         <div id="map-wrapper">
           <canvas id="map-canvas"></canvas>
         </div>
+        <div id="log-header">
+          <span class="section-label" style="margin:0">LOG</span>
+          <button id="btn-toggle-log" class="ribbon-btn" title="Toggle log">▼</button>
+        </div>
         <div id="message-log"></div>
-      </div>
-
-      <!-- Center panel (territory / tile info) -->
-      <div id="center-panel">
-        <div class="sidebar-section">
-          <div class="section-label">TILE INFO</div>
-          <div id="cp-terrain" class="cp-value">—</div>
-          <div id="cp-coords" class="cp-sub">—</div>
-          <div id="cp-cost" class="cp-sub">—</div>
-        </div>
-        <div class="sidebar-section">
-          <div class="section-label">TERRITORY</div>
-          <div class="cp-sub" style="font-style:italic;opacity:0.4">Unclaimed</div>
-        </div>
       </div>
 
       <!-- Right: sidebar -->
@@ -162,7 +152,7 @@
             <button id="btn-roll-die" class="die-btn" title="Click to roll">
               <svg id="die-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
                 <polygon points="30,4 56,20 56,40 30,56 4,40 4,20" class="die-hex"/>
-                <text id="die-face" x="30" y="37" text-anchor="middle" class="die-text">d8</text>
+                <text id="die-face" x="30" y="37" text-anchor="middle" class="die-text">d10</text>
               </svg>
             </button>
             <div id="dice-prompt">Roll to begin your turn</div>
@@ -199,6 +189,21 @@
         </div>
 
       </div>
+
+      <!-- Info panel (tile info — right of sidebar) -->
+      <div id="center-panel">
+        <div class="sidebar-section">
+          <div class="section-label">TILE INFO</div>
+          <div id="cp-terrain" class="cp-value">—</div>
+          <div id="cp-coords" class="cp-sub">—</div>
+          <div id="cp-cost" class="cp-sub">—</div>
+        </div>
+        <div class="sidebar-section">
+          <div class="section-label">TERRITORY</div>
+          <div class="cp-sub" style="font-style:italic;opacity:0.4">Unclaimed</div>
+        </div>
+      </div>
+
     </div>
   </div>
 

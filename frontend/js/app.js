@@ -15,7 +15,12 @@ function show(name) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────
-document.getElementById('btn-new-game').addEventListener('click', () => show('newGame'));
+document.getElementById('btn-new-game').addEventListener('click', () => {
+  // Auto-populate seed so the user can see and replay the exact map
+  document.getElementById('input-seed').value =
+    Math.floor(Math.random() * 2147483647);
+  show('newGame');
+});
 document.getElementById('btn-load-game').addEventListener('click', () => { loadSaveList(); show('load'); });
 document.getElementById('btn-back-home').addEventListener('click', () => show('home'));
 document.getElementById('btn-back-home-2').addEventListener('click', () => show('home'));
@@ -199,7 +204,7 @@ function clientToTile(clientX, clientY) {
 // Diagonal cost formula (terrain.config): round(a/2 + (b/2) * sqrt(b))
 //   where a = origin tile move_cost, b = destination tile move_cost.
 // Cardinal cost: b (destination only).
-const DIE_SIDES = 8;  // matches terrain.config [constants] die
+const DIE_SIDES = 10;  // matches terrain.config [constants] die
 
 function stepCost(originTile, destTile, dx, dy) {
   const b = destTile.move_cost;
@@ -310,7 +315,7 @@ document.getElementById('btn-roll-die').addEventListener('click', async () => {
   ]);
 
   // Flicker until we have the result, then land on the real number
-  let flicker = setInterval(() => { face.textContent = Math.ceil(Math.random() * 8); }, 55);
+  let flicker = setInterval(() => { face.textContent = Math.ceil(Math.random() * 10); }, 55);
   setTimeout(() => {
     clearInterval(flicker);
     btn.classList.remove('rolling');
@@ -332,10 +337,18 @@ document.getElementById('btn-end-turn').addEventListener('click', async () => {
   const result = await api('POST', `/api/games/${G.game_id}/end-turn`);
   if (!result) return;
   G = result.game_state;
-  document.getElementById('die-face').textContent = 'd8';
+  document.getElementById('die-face').textContent = 'd10';
   clearHover();
   syncUI();
   logMessage(`— ${result.message} —`, 'highlight');
+});
+
+// ── Log collapse ──────────────────────────────────────────────────────────
+document.getElementById('btn-toggle-log').addEventListener('click', () => {
+  const log = document.getElementById('message-log');
+  const btn = document.getElementById('btn-toggle-log');
+  const nowCollapsed = log.classList.toggle('collapsed');
+  btn.textContent = nowCollapsed ? '▶' : '▼';
 });
 
 // ── Map modes ─────────────────────────────────────────────────────────────

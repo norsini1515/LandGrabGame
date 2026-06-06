@@ -17,19 +17,20 @@ def test_all_positions_covered():
     assert positions == expected
 
 
-def test_edge_tiles_are_water():
-    """Corner tiles should be ocean or coastal due to the edge fade."""
+def test_edge_tiles_are_low_elevation():
+    """Corner tiles should be ocean or low-elevation land due to the edge fade.
+
+    After inland-coastal fixing, coastal-type tiles may be converted to land
+    if they're >2 tiles from ocean — so we just check elevation is low.
+    """
     w, h = 20, 20
     tiles = generate_map(w, h, seed=99)
     tile_map = {(t.x, t.y): t for t in tiles}
     corners = [(0, 0), (w-1, 0), (0, h-1), (w-1, h-1)]
-    water = {
-        TerrainType.OCEAN, TerrainType.COASTAL,
-        TerrainType.FLOODPLAIN, TerrainType.CLIFF_COAST,
-    }
     for pos in corners:
-        assert tile_map[pos].terrain in water, (
-            f"Corner {pos} is {tile_map[pos].terrain}, expected water"
+        t = tile_map[pos]
+        assert t.elevation < 0.55, (
+            f"Corner {pos} elevation {t.elevation:.3f} too high (terrain={t.terrain})"
         )
 
 

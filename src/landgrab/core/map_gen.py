@@ -167,6 +167,9 @@ def generate_map(
     # 8. Fix interior ocean
     _fix_interior_ocean(tiles)
 
+    # 9. Ensure coastal types only appear within 2 tiles of ocean
+    _fix_inland_coastal(tiles, rng)
+
     return tiles
 
 
@@ -379,7 +382,7 @@ def _add_rivers(
         start = rng.choice(high_tiles)
         cx, cy = start.x, start.y
 
-        for _ in range(width + height):
+        for _ in range((width + height) * 2):
             current = grid.get((cx, cy))
             if current is None:
                 break
@@ -405,6 +408,37 @@ def _add_rivers(
             if elev[(nxt.x, nxt.y)] >= (elev[(cx, cy)] - min_descent):
                 break
             cx, cy = nxt.x, nxt.y
+
+
+# ---------------------------------------------------------------------------
+# Inland coastal fix — coastal types must be ≤ 2 tiles from ocean
+# ---------------------------------------------------------------------------
+
+def _fix_inland_coastal(tiles: list[Tile], rng: random.Random) -> None:
+    """Convert coastal-type tiles that are >2 Manhattan tiles from any ocean."""
+    grid = {(t.x, t.y): t for t in tiles}
+    ocean_set = {(t.x, t.y) for t in tiles if t.terrain == TerrainType.OCEAN}
+    coastal_types = {TerrainType.COASTAL, TerrainType.FLOODPLAIN, TerrainType.CLIFF_COAST}
+
+    for tile in tiles:
+        if tile.terrain not in coastal_types:
+            continue
+        # Check Manhattan distance ≤ 2 to any ocean tile
+        near_ocean = any(
+            abs(tile.x - ox) + abs(tile.y - oy) <= 2
+            for ox, oy in ocean_set
+        )
+        if near_ocean:
+            continue
+        # Convert to the most common adjacent land terrain, or plain as fallback
+        nbr_terrains = []
+        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+            nbr = grid.get((tile.x + dx, tile.y + dy))
+            if nbr and nbr.terrain not in coastal_types and nbr.terrain != TerrainType.OCEAN:
+                nbr_terrains.append(nbr.terrain)
+        new_terrain = rng.choice(nbr_terrains) if nbr_terrains else TerrainType.PLAIN
+        tile.terrain   = new_terrain
+        tile.move_cost = config.get_move_cost(new_terrain.value, tile.modifier.value)
 
 
 # ---------------------------------------------------------------------------
