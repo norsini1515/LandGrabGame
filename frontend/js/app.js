@@ -11,10 +11,10 @@ const screens = {
 function show(name) {
   Object.values(screens).forEach(s => s.classList.remove('active'));
   screens[name].classList.add('active');
-  if (name === 'game') requestAnimationFrame(renderMap);
+  if (name === 'game') requestAnimationFrame(() => { resizeCanvas(); syncUI(); });
 }
 
-// ── Home ──────────────────────────────────────────────────────────────────
+// ── Navigation ────────────────────────────────────────────────────────────
 document.getElementById('btn-new-game').addEventListener('click', () => show('newGame'));
 document.getElementById('btn-load-game').addEventListener('click', () => { loadSaveList(); show('load'); });
 document.getElementById('btn-back-home').addEventListener('click', () => show('home'));
@@ -54,87 +54,186 @@ async function loadSaveList() {
   });
 }
 
-// ── Game state ────────────────────────────────────────────────────────────
-let G        = null;   // GameState
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const canvas  = document.getElementById('map-canvas');
+const ctx     = canvas.getContext('2d');
+const wrapper = document.getElementById('map-wrapper');
+const tooltip = document.getElementById('tile-tooltip');
+
+// ── Game / camera state ───────────────────────────────────────────────────
+let G        = null;
+let tileGrid = null;
 let mapMode  = 'terrain';
-let tileGrid = null;   // Map<string, tile> for fast lookup
+const camera = { zoom: 1.0 };
+
+// Hover state
+let hoveredTile  = null;
+let hoverPath    = null;
+let hoverCost    = null;
+let tooltipTimer = null;
+
+// Pan state
+let isPanning = false;
+let panStart  = null;
 
 function startGame(state) {
   G = state;
+  camera.zoom = 1.0;
   buildTileGrid();
   show('game');
-  syncUI();
 }
 
 function buildTileGrid() {
   tileGrid = new Map();
-  if (!G) return;
-  G.tiles.forEach(t => tileGrid.set(`${t.x},${t.y}`, t));
+  G?.tiles.forEach(t => tileGrid.set(`${t.x},${t.y}`, t));
 }
 
 function getTile(x, y) { return tileGrid?.get(`${x},${y}`) ?? null; }
 
-// ── Movement costs (mirrors backend TERRAIN_MOVE_COST) ────────────────────
-const MOVE_COST = {
-  ocean: null, coast: 1, plains: 1, forest: 2, hills: 2, mountains: 3, river: 1,
-};
+// ── Canvas sizing ─────────────────────────────────────────────────────────
+// The canvas is sized to the FULL zoomed map so the wrapper's overflow auto
+// shows native scrollbars automatically.
 
-// ── Client-side Dijkstra ─────────────────────────────────────────────────
-// Returns {cost, path:[{x,y},...]} or null if unreachable / exceeds budget.
+function baseTileSize() {
+  if (!G) return [16, 16];
+  return [wrapper.clientWidth / G.map_width, wrapper.clientHeight / G.map_height];
+}
+
+function tileSize() {
+  const [bw, bh] = baseTileSize();
+  return [bw * camera.zoom, bh * camera.zoom];
+}
+
+function resizeCanvas() {
+  if (!G) return;
+  const [tw, th] = tileSize();
+  canvas.width  = Math.round(G.map_width  * tw);
+  canvas.height = Math.round(G.map_height * th);
+  renderMap();
+}
+
+// Re-render on scroll (camera position = wrapper.scrollLeft/scrollTop)
+wrapper.addEventListener('scroll', () => renderMap());
+
+// ── Mouse wheel zoom ──────────────────────────────────────────────────────
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  if (!G) return;
+
+  // World tile coordinate under mouse before zoom
+  const rect = canvas.getBoundingClientRect();
+  const pixX  = e.clientX - rect.left;   // canvas pixel under cursor
+  const pixY  = e.clientY - rect.top;
+  const [tw0] = tileSize();
+  const tileX = (pixX) / (canvas.width  / G.map_width);
+  const tileY = (pixY) / (canvas.height / G.map_height);
+
+  const factor    = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+  camera.zoom     = Math.max(1.0, Math.min(6.0, camera.zoom * factor));
+
+  resizeCanvas();  // resizes canvas element; renderMap called inside
+
+  // Adjust scroll so the tile under the cursor stays under the cursor
+  const [tw1, th1] = tileSize();
+  const wRect = wrapper.getBoundingClientRect();
+  wrapper.scrollLeft = tileX * tw1 - (e.clientX - wRect.left);
+  wrapper.scrollTop  = tileY * th1 - (e.clientY - wRect.top);
+}, { passive: false });
+
+// ── Middle-mouse drag to pan ───────────────────────────────────────────────
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 1) {
+    isPanning = true;
+    panStart  = { mx: e.clientX, my: e.clientY, sx: wrapper.scrollLeft, sy: wrapper.scrollTop };
+    e.preventDefault();
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (isPanning && panStart) {
+    wrapper.scrollLeft = panStart.sx - (e.clientX - panStart.mx);
+    wrapper.scrollTop  = panStart.sy - (e.clientY - panStart.my);
+  }
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (e.button === 1) { isPanning = false; panStart = null; canvas.style.cursor = ''; }
+});
+
+window.addEventListener('resize', () => {
+  if (!G) return;
+  // Preserve relative scroll position when viewport resizes
+  const rx = canvas.width  ? wrapper.scrollLeft / canvas.width  : 0;
+  const ry = canvas.height ? wrapper.scrollTop  / canvas.height : 0;
+  resizeCanvas();
+  wrapper.scrollLeft = rx * canvas.width;
+  wrapper.scrollTop  = ry * canvas.height;
+});
+
+// ── Coordinate helpers ────────────────────────────────────────────────────
+// canvas.getBoundingClientRect() accounts for parent scroll, so this
+// correctly converts viewport mouse coords to canvas pixel coords.
+function clientToTile(clientX, clientY) {
+  if (!G) return null;
+  const rect = canvas.getBoundingClientRect();
+  const cx   = clientX - rect.left;
+  const cy   = clientY - rect.top;
+  const tw   = canvas.width  / G.map_width;
+  const th   = canvas.height / G.map_height;
+  const x = Math.floor(cx / tw);
+  const y = Math.floor(cy / th);
+  if (x < 0 || y < 0 || x >= G.map_width || y >= G.map_height) return null;
+  return { x, y };
+}
+
+// ── Client-side Dijkstra ──────────────────────────────────────────────────
+const MOVE_COST = { ocean: null, coast: 1, plains: 1, forest: 2, hills: 2, mountains: 3, river: 1 };
+
 function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
   if (!G) return null;
-  const W = G.map_width, H = G.map_height;
   const dist = new Map();
   const prev = new Map();
   dist.set(`${sx},${sy}`, 0);
 
-  // Min-heap: [cost, x, y]
+  // Simple priority queue (small maps — sort is fine)
   const heap = [[0, sx, sy]];
-
   while (heap.length) {
-    heap.sort((a, b) => a[0] - b[0]); // tiny map, simple sort is fine
+    heap.sort((a, b) => a[0] - b[0]);
     const [cost, x, y] = heap.shift();
     const key = `${x},${y}`;
-
     if (x === tx && y === ty) break;
     if (cost > (dist.get(key) ?? Infinity)) continue;
-
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
       const nx = x + dx, ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (nx < 0 || ny < 0 || nx >= G.map_width || ny >= G.map_height) continue;
       const tile = getTile(nx, ny);
       if (!tile) continue;
-      const stepCost = MOVE_COST[tile.terrain];
-      if (stepCost == null) continue; // impassable
-      const newCost = cost + stepCost;
-      if (newCost > maxCost) continue;
+      const step = MOVE_COST[tile.terrain];
+      if (step == null) continue;
+      const nc = cost + step;
+      if (nc > maxCost) continue;
       const nk = `${nx},${ny}`;
-      if (newCost < (dist.get(nk) ?? Infinity)) {
-        dist.set(nk, newCost);
+      if (nc < (dist.get(nk) ?? Infinity)) {
+        dist.set(nk, nc);
         prev.set(nk, `${x},${y}`);
-        heap.push([newCost, nx, ny]);
+        heap.push([nc, nx, ny]);
       }
     }
   }
-
-  const targetKey = `${tx},${ty}`;
-  if (!dist.has(targetKey)) return null;
-
-  // Reconstruct path
+  const tk = `${tx},${ty}`;
+  if (!dist.has(tk)) return null;
   const path = [];
-  let cur = targetKey;
-  while (cur) {
-    const [cx, cy] = cur.split(',').map(Number);
-    path.unshift({ x: cx, y: cy });
-    cur = prev.get(cur) ?? null;
-  }
-  return { cost: dist.get(targetKey), path };
+  let cur = tk;
+  while (cur) { const [cx, cy] = cur.split(',').map(Number); path.unshift({x:cx, y:cy}); cur = prev.get(cur) ?? null; }
+  return { cost: dist.get(tk), path };
 }
 
 // ── Sync UI ───────────────────────────────────────────────────────────────
 function syncUI() {
   if (!G) return;
-  const p = G.player;
+  const p    = G.player;
+  const roll = G.phase === 'move' ? p.movement_total : null;
 
   document.getElementById('hud-name').textContent = p.name;
   document.getElementById('hud-turn').textContent  = G.turn;
@@ -142,9 +241,17 @@ function syncUI() {
   document.getElementById('hud-gold').textContent  = p.gold;
 
   const isRoll = G.phase === 'roll';
-  document.getElementById('dice-roll-area').style.display = isRoll ? 'flex' : 'none';
-  document.getElementById('move-info').classList.toggle('hidden', isRoll);
 
+  // Big die vs mini die
+  document.getElementById('dice-roll-area').style.display = isRoll ? 'flex' : 'none';
+  const mini = document.getElementById('die-result-mini');
+  mini.classList.toggle('hidden', isRoll);
+  if (!isRoll && roll != null) {
+    document.getElementById('die-mini-face').textContent = roll;
+  }
+
+  // Move info
+  document.getElementById('move-info').classList.toggle('hidden', isRoll);
   if (!isRoll) {
     document.getElementById('move-remaining').textContent = p.movement_remaining;
     document.getElementById('move-total').textContent     = p.movement_total;
@@ -159,28 +266,34 @@ function syncUI() {
 // ── Dice roll ─────────────────────────────────────────────────────────────
 document.getElementById('btn-roll-die').addEventListener('click', async () => {
   if (!G || G.phase !== 'roll') return;
+
   const btn  = document.getElementById('btn-roll-die');
   const face = document.getElementById('die-face');
   btn.disabled = true;
   btn.classList.add('rolling');
 
-  let frames = 0;
-  const flicker = setInterval(() => {
-    face.textContent = Math.ceil(Math.random() * 8);
-    if (++frames > 8) clearInterval(flicker);
-  }, 50);
+  // Fire API call and minimum animation delay in parallel so there's
+  // no gap between animation settling and the real result appearing.
+  const [result] = await Promise.all([
+    api('POST', `/api/games/${G.game_id}/roll`),
+    new Promise(r => setTimeout(r, 520)),  // minimum spin duration
+  ]);
 
-  setTimeout(async () => {
-    const result = await api('POST', `/api/games/${G.game_id}/roll`);
+  // Flicker until we have the result, then land on the real number
+  let flicker = setInterval(() => { face.textContent = Math.ceil(Math.random() * 8); }, 55);
+  setTimeout(() => {
+    clearInterval(flicker);
     btn.classList.remove('rolling');
     btn.disabled = false;
-    clearInterval(flicker);
     if (!result) return;
+    // Show real value in big die briefly before transitioning to mini
     face.textContent = result.roll;
-    G = result.game_state;
-    syncUI();
-    logMessage(`🎲 Rolled a ${result.roll} — ${result.movement_total} movement points.`, 'highlight');
-  }, 450);
+    setTimeout(() => {
+      G = result.game_state;
+      syncUI();
+      logMessage(`🎲 Rolled a ${result.roll} — ${result.movement_total} movement points.`, 'highlight');
+    }, 350);  // let player read the landed value
+  }, 30);
 });
 
 // ── End turn ──────────────────────────────────────────────────────────────
@@ -205,13 +318,13 @@ document.getElementById('map-mode-btns').addEventListener('click', (e) => {
   renderMap();
 });
 
-// ── Keyboard fallback (one step) ──────────────────────────────────────────
+// ── Keyboard fallback ─────────────────────────────────────────────────────
 window.addEventListener('keydown', (e) => {
   const KEY_MAP = {
-    ArrowUp: [0,-1], ArrowDown: [0,1], ArrowLeft: [-1,0], ArrowRight: [1,0],
-    Numpad7: [-1,-1], Numpad8: [0,-1], Numpad9: [1,-1],
-    Numpad4: [-1, 0],                  Numpad6: [1, 0],
-    Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1],
+    ArrowUp:[0,-1], ArrowDown:[0,1], ArrowLeft:[-1,0], ArrowRight:[1,0],
+    Numpad7:[-1,-1], Numpad8:[0,-1], Numpad9:[1,-1],
+    Numpad4:[-1,0],                  Numpad6:[1,0],
+    Numpad1:[-1,1],  Numpad2:[0,1],  Numpad3:[1,1],
   };
   const d = KEY_MAP[e.code];
   if (d && G && G.phase === 'move' && G.player.movement_remaining > 0) {
@@ -221,64 +334,27 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// ── Canvas ────────────────────────────────────────────────────────────────
-const canvas  = document.getElementById('map-canvas');
-const ctx     = canvas.getContext('2d');
-const tooltip = document.getElementById('tile-tooltip');
-
-const TERRAIN_COLORS = {
-  ocean: '#1a3a5c', coast: '#c2b280', plains: '#6b8c42',
-  forest: '#2d5a27', hills: '#8c7340', mountains: '#6e6e6e', river: '#2a6496',
-};
-
-let hoveredTile  = null;  // {x, y}
-let hoverPath    = null;  // [{x,y},...] or null
-let hoverCost    = null;
-let tooltipTimer = null;
-
-function tileSize() {
-  if (!G) return [1, 1];
-  return [canvas.width / G.map_width, canvas.height / G.map_height];
-}
-
-function canvasToTile(cx, cy) {
-  if (!G) return null;
-  const [tw, th] = tileSize();
-  const x = Math.floor(cx / tw);
-  const y = Math.floor(cy / th);
-  if (x < 0 || y < 0 || x >= G.map_width || y >= G.map_height) return null;
-  return { x, y };
-}
-
 // ── Hover ─────────────────────────────────────────────────────────────────
 canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const tile = canvasToTile(e.clientX - rect.left, e.clientY - rect.top);
-
+  if (isPanning) return;
+  const tile = clientToTile(e.clientX, e.clientY);
   if (!tile || !G) { clearHover(); return; }
 
   const changed = !hoveredTile || hoveredTile.x !== tile.x || hoveredTile.y !== tile.y;
   if (changed) {
     clearHover();
     hoveredTile = tile;
-
-    // Compute path if in move phase
     if (G.phase === 'move' && G.player.movement_remaining > 0) {
       const [px, py] = G.player.position;
       if (tile.x !== px || tile.y !== py) {
-        const result = dijkstra(px, py, tile.x, tile.y, G.player.movement_remaining);
-        hoverPath = result?.path ?? null;
-        hoverCost = result?.cost ?? null;
+        const r = dijkstra(px, py, tile.x, tile.y, G.player.movement_remaining);
+        hoverPath = r?.path ?? null;
+        hoverCost = r?.cost ?? null;
       }
     }
-
     renderMap();
-
-    // Delay tooltip
     tooltipTimer = setTimeout(() => showTooltip(tile, e.clientX, e.clientY), 500);
   }
-
-  // Move tooltip with mouse
   positionTooltip(e.clientX, e.clientY);
 });
 
@@ -291,46 +367,44 @@ function clearHover() {
   hoverPath    = null;
   hoverCost    = null;
   tooltip.classList.add('hidden');
-  renderMap();
+  if (G) renderMap();
 }
 
 function showTooltip(tile, mx, my) {
   const t = getTile(tile.x, tile.y);
   if (!t) return;
-
   document.getElementById('tt-terrain').textContent = t.terrain;
   document.getElementById('tt-owner').textContent   = 'Unclaimed';
-
   const costEl = document.getElementById('tt-cost');
   const mc = MOVE_COST[t.terrain];
   if (mc == null) {
-    costEl.textContent  = 'Impassable';
-    costEl.className    = 'impassable';
+    costEl.textContent = 'Impassable';
+    costEl.className   = 'impassable';
   } else if (G?.phase === 'move') {
     const mp = G.player.movement_remaining;
-    if (hoverCost != null) {
-      costEl.textContent = `Cost: ${hoverCost} MP (${mp - hoverCost} remaining)`;
+    const [px, py] = G.player.position;
+    if (tile.x === px && tile.y === py) {
+      costEl.textContent = 'Current position';
+      costEl.className   = '';
+    } else if (hoverCost != null) {
+      costEl.textContent = `Path cost: ${hoverCost} MP  (${mp - hoverCost} left)`;
       costEl.className   = 'reachable';
-    } else if (hoverCost === null && hoveredTile) {
+    } else {
       costEl.textContent = 'Out of reach';
       costEl.className   = 'unreachable';
-    } else {
-      costEl.textContent = `Enter cost: ${mc} MP`;
-      costEl.className   = '';
     }
   } else {
     costEl.textContent = `Enter cost: ${mc} MP`;
     costEl.className   = '';
   }
-
   tooltip.classList.remove('hidden');
   positionTooltip(mx, my);
 }
 
 function positionTooltip(mx, my) {
   const pad = 14;
-  const tw  = tooltip.offsetWidth  || 130;
-  const th  = tooltip.offsetHeight || 70;
+  const tw  = tooltip.offsetWidth  || 140;
+  const th  = tooltip.offsetHeight || 75;
   let left = mx + pad;
   let top  = my + pad;
   if (left + tw > window.innerWidth)  left = mx - tw - pad;
@@ -341,9 +415,8 @@ function positionTooltip(mx, my) {
 
 // ── Click to move ─────────────────────────────────────────────────────────
 canvas.addEventListener('click', (e) => {
-  if (!G || G.phase !== 'move' || G.player.movement_remaining <= 0) return;
-  const rect = canvas.getBoundingClientRect();
-  const tile = canvasToTile(e.clientX - rect.left, e.clientY - rect.top);
+  if (e.button !== 0 || !G || G.phase !== 'move' || G.player.movement_remaining <= 0) return;
+  const tile = clientToTile(e.clientX, e.clientY);
   if (!tile) return;
   const [px, py] = G.player.position;
   if (tile.x === px && tile.y === py) return;
@@ -356,90 +429,91 @@ async function doMoveTo(tx, ty) {
   const result = await api('POST', `/api/games/${G.game_id}/move-to`, { tx, ty });
   if (!result) return;
   G = result.game_state;
-  hoverPath = null;
-  hoverCost = null;
-  hoveredTile = null;
-  syncUI();
-  const cls = 'highlight';
-  logMessage(result.message, cls);
-  if (G.player.movement_remaining <= 0) {
-    logMessage('No movement remaining — end your turn.', 'warn');
+  // Recompute hover path from new position
+  hoverPath = null; hoverCost = null;
+  if (hoveredTile && G.phase === 'move' && G.player.movement_remaining > 0) {
+    const [px, py] = G.player.position;
+    if (hoveredTile.x !== px || hoveredTile.y !== py) {
+      const r = dijkstra(px, py, hoveredTile.x, hoveredTile.y, G.player.movement_remaining);
+      hoverPath = r?.path ?? null;
+      hoverCost = r?.cost ?? null;
+    }
   }
+  syncUI();
+  logMessage(result.message, 'highlight');
+  if (G.player.movement_remaining <= 0) logMessage('No movement remaining — end your turn.', 'warn');
 }
 
-// ── Canvas rendering ──────────────────────────────────────────────────────
+// ── Rendering ─────────────────────────────────────────────────────────────
+const TERRAIN_COLORS = {
+  ocean:'#1a3a5c', coast:'#c2b280', plains:'#6b8c42',
+  forest:'#2d5a27', hills:'#8c7340', mountains:'#6e6e6e', river:'#2a6496',
+};
+
 function renderMap() {
-  if (!G) return;
-  const parent = canvas.parentElement;
-  const W = parent.clientWidth;
-  const H = Math.max(100, parent.clientHeight - 110);
-  if (canvas.width !== W || canvas.height !== H) {
-    canvas.width  = W;
-    canvas.height = H;
-  }
+  if (!G || canvas.width === 0 || canvas.height === 0) return;
 
-  const [tw, th] = tileSize();
+  const tw  = canvas.width  / G.map_width;
+  const th  = canvas.height / G.map_height;
+  const sx  = wrapper.scrollLeft;
+  const sy  = wrapper.scrollTop;
+  const vw  = wrapper.clientWidth;
+  const vh  = wrapper.clientHeight;
 
-  // Base terrain / elevation
+  // Cull to only visible tiles
+  const x0 = Math.max(0, Math.floor(sx / tw));
+  const y0 = Math.max(0, Math.floor(sy / th));
+  const x1 = Math.min(G.map_width  - 1, Math.ceil((sx + vw) / tw));
+  const y1 = Math.min(G.map_height - 1, Math.ceil((sy + vh) / th));
+
+  ctx.clearRect(sx, sy, vw, vh);
+
   G.tiles.forEach(tile => {
+    if (tile.x < x0 || tile.x > x1 || tile.y < y0 || tile.y > y1) return;
     ctx.fillStyle = mapMode === 'elevation'
-      ? elevationColor(tile.elevation)
+      ? `rgb(${Math.round(tile.elevation*255)},${Math.round(tile.elevation*255)},${Math.round(tile.elevation*255)})`
       : (TERRAIN_COLORS[tile.terrain] || '#333');
     ctx.fillRect(tile.x * tw, tile.y * th, Math.ceil(tw), Math.ceil(th));
   });
 
-  // Path highlight
+  // Path
   if (hoverPath && hoverPath.length > 1) {
-    ctx.strokeStyle = 'rgba(240,100,180,0.55)';
+    ctx.strokeStyle = 'rgba(240,100,180,0.6)';
     ctx.lineWidth   = Math.max(1.5, tw * 0.25);
     ctx.lineCap     = 'round';
     ctx.lineJoin    = 'round';
     ctx.setLineDash([Math.max(2, tw * 0.35), Math.max(2, tw * 0.2)]);
     ctx.beginPath();
     hoverPath.forEach((p, i) => {
-      const cx = p.x * tw + tw / 2;
-      const cy = p.y * th + th / 2;
+      const cx = p.x * tw + tw / 2, cy = p.y * th + th / 2;
       i === 0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
     });
     ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  // Hover tile outline
+  // Hover outline
   if (hoveredTile) {
-    const t = getTile(hoveredTile.x, hoveredTile.y);
-    const canMove = G?.phase === 'move' && G.player.movement_remaining > 0;
-    const reachable = hoverPath != null;
-    const impassable = t && MOVE_COST[t.terrain] == null;
+    const t   = getTile(hoveredTile.x, hoveredTile.y);
+    const lw  = Math.max(1.5, tw * 0.1);
+    const imp = t && MOVE_COST[t.terrain] == null;
+    const oor = G?.phase === 'move' && !imp && hoverCost == null;
+    ctx.lineWidth   = lw;
+    ctx.strokeStyle = (imp || oor) ? 'rgba(180,50,50,0.75)' : 'rgba(240,100,180,0.95)';
+    ctx.strokeRect(hoveredTile.x * tw + lw/2, hoveredTile.y * th + lw/2, tw - lw, th - lw);
 
-    ctx.lineWidth = Math.max(1.5, tw * 0.12);
-    if (impassable || (canMove && !reachable)) {
-      ctx.strokeStyle = 'rgba(180,50,50,0.7)';
-    } else {
-      ctx.strokeStyle = 'rgba(240,100,180,0.9)';
-    }
-    ctx.strokeRect(
-      hoveredTile.x * tw + ctx.lineWidth / 2,
-      hoveredTile.y * th + ctx.lineWidth / 2,
-      tw - ctx.lineWidth,
-      th - ctx.lineWidth,
-    );
-
-    // Cost badge on hovered tile
-    if (canMove && hoverCost != null) {
+    // Cost badge
+    if (G?.phase === 'move' && hoverCost != null) {
       const bx = hoveredTile.x * tw + tw / 2;
       const by = hoveredTile.y * th + th / 2;
-      const label = `${hoverCost}`;
-      const fontSize = Math.max(9, Math.min(13, tw * 0.55));
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
+      const fs = Math.max(9, Math.min(14, tw * 0.52));
+      ctx.font         = `bold ${fs}px sans-serif`;
+      ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.75)';
-      ctx.fillText(label, bx + 1, by + 1);
-      // Text
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillText(`${hoverCost}`, bx + 1, by + 1);
       ctx.fillStyle = '#f064b4';
-      ctx.fillText(label, bx, by);
+      ctx.fillText(`${hoverCost}`, bx, by);
     }
   }
 
@@ -448,24 +522,11 @@ function renderMap() {
   const cx = px * tw + tw / 2;
   const cy = py * th + th / 2;
   const r  = Math.max(2, Math.min(tw, th) * 0.38);
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, r + 2, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = '#e8c84a';
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI*2);
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.fillStyle = '#e8c84a'; ctx.fill();
 }
-
-function elevationColor(e) {
-  const v = Math.round(e * 255);
-  return `rgb(${v},${v},${v})`;
-}
-
-window.addEventListener('resize', () => { if (G) renderMap(); });
 
 // ── Message log ───────────────────────────────────────────────────────────
 function logMessage(msg, type = '') {
@@ -494,6 +555,4 @@ async function api(method, path, body = null) {
   }
 }
 
-function esc(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
