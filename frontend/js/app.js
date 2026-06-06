@@ -19,6 +19,7 @@ document.getElementById('btn-new-game').addEventListener('click', () => show('ne
 document.getElementById('btn-load-game').addEventListener('click', () => { loadSaveList(); show('load'); });
 document.getElementById('btn-back-home').addEventListener('click', () => show('home'));
 document.getElementById('btn-back-home-2').addEventListener('click', () => show('home'));
+document.getElementById('btn-menu').addEventListener('click', () => show('home'));
 
 // ── New game form ─────────────────────────────────────────────────────────
 document.getElementById('form-new-game').addEventListener('submit', async (e) => {
@@ -27,6 +28,12 @@ document.getElementById('form-new-game').addEventListener('submit', async (e) =>
     player_name: document.getElementById('input-name').value.trim(),
     map_width:   parseInt(document.getElementById('input-width').value, 10),
     map_height:  parseInt(document.getElementById('input-height').value, 10),
+    world: {
+      climate:       document.getElementById('input-climate').value,
+      precipitation: document.getElementById('input-precipitation').value,
+      age:           document.getElementById('input-age').value,
+      fragmentation: document.getElementById('input-fragmentation').value,
+    },
   };
   const seedRaw = document.getElementById('input-seed').value.trim();
   if (seedRaw) body.seed = parseInt(seedRaw, 10);
@@ -91,12 +98,11 @@ function buildTileGrid() {
 function getTile(x, y) { return tileGrid?.get(`${x},${y}`) ?? null; }
 
 // ── Canvas sizing ─────────────────────────────────────────────────────────
-// The canvas is sized to the FULL zoomed map so the wrapper's overflow auto
-// shows native scrollbars automatically.
+// Fixed base tile size keeps maps legibly zoomed out; zoom scales on top.
+const BASE_TILE_PX = 14;
 
 function baseTileSize() {
-  if (!G) return [16, 16];
-  return [wrapper.clientWidth / G.map_width, wrapper.clientHeight / G.map_height];
+  return [BASE_TILE_PX, BASE_TILE_PX];
 }
 
 function tileSize() {
@@ -240,6 +246,10 @@ function syncUI() {
   document.getElementById('hud-pos').textContent   = `${p.position[0]}, ${p.position[1]}`;
   document.getElementById('hud-gold').textContent  = p.gold;
 
+  // Ribbon
+  document.getElementById('ribbon-gold').textContent = p.gold;
+  document.getElementById('ribbon-val').textContent  = p.gold; // placeholder until economy exists
+
   const isRoll = G.phase === 'roll';
 
   // Big die vs mini die
@@ -373,8 +383,12 @@ function clearHover() {
 function showTooltip(tile, mx, my) {
   const t = getTile(tile.x, tile.y);
   if (!t) return;
-  const modLabel = t.modifier && t.modifier !== 'flat' ? ` (${t.modifier})` : '';
-  document.getElementById('tt-terrain').textContent = t.terrain + modLabel;
+  const modLabel = t.modifier && t.modifier !== 'flat' ? ` · ${t.modifier}` : '';
+  const riverLabel = t.is_river ? ' · river' : '';
+  document.getElementById('tt-terrain').textContent =
+    `${t.terrain}${modLabel}${riverLabel}  (${tile.x}, ${tile.y})`;
+  document.getElementById('tt-scalar').textContent =
+    t.hills_scalar > 0 ? `Ruggedness: ${t.hills_scalar.toFixed(2)}` : '';
   document.getElementById('tt-owner').textContent   = 'Unclaimed';
   const costEl = document.getElementById('tt-cost');
   const mc = t.move_cost;
@@ -501,6 +515,7 @@ function renderMap() {
 
   ctx.clearRect(sx, sy, vw, vh);
 
+  // Draw terrain tiles (river tiles show their underlying terrain color)
   G.tiles.forEach(tile => {
     if (tile.x < x0 || tile.x > x1 || tile.y < y0 || tile.y > y1) return;
     ctx.fillStyle = mapMode === 'elevation'
@@ -508,6 +523,49 @@ function renderMap() {
       : tileColor(tile);
     ctx.fillRect(tile.x * tw, tile.y * th, Math.ceil(tw), Math.ceil(th));
   });
+
+  // Draw rivers as lines (separate pass so they render on top of terrain fills)
+  if (mapMode === 'terrain') {
+    const riverSet = new Set();
+    G.tiles.forEach(t => { if (t.is_river || t.terrain === 'river') riverSet.add(`${t.x},${t.y}`); });
+
+    if (riverSet.size > 0) {
+      ctx.strokeStyle = '#3a7fc1';
+      ctx.lineWidth   = Math.max(1.5, Math.min(tw, th) * 0.32);
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+
+      G.tiles.forEach(tile => {
+        if (!tile.is_river && tile.terrain !== 'river') return;
+        if (tile.x < x0 - 1 || tile.x > x1 + 1 || tile.y < y0 - 1 || tile.y > y1 + 1) return;
+
+        const cx2 = tile.x * tw + tw / 2;
+        const cy2 = tile.y * th + th / 2;
+
+        for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nx = tile.x + dx, ny = tile.y + dy;
+          if (!riverSet.has(`${nx},${ny}`)) continue;
+          // Draw only in one direction to avoid duplicate strokes
+          if (nx < tile.x || (nx === tile.x && ny < tile.y)) continue;
+          ctx.beginPath();
+          ctx.moveTo(cx2, cy2);
+          ctx.lineTo(nx * tw + tw / 2, ny * th + th / 2);
+          ctx.stroke();
+        }
+
+        // Draw a small dot for isolated river tiles or river mouths
+        const hasRiverNeighbor = [[-1,0],[1,0],[0,-1],[0,1]].some(
+          ([dx, dy]) => riverSet.has(`${tile.x+dx},${tile.y+dy}`)
+        );
+        if (!hasRiverNeighbor) {
+          ctx.beginPath();
+          ctx.arc(cx2, cy2, Math.max(1.5, tw * 0.18), 0, Math.PI * 2);
+          ctx.fillStyle = '#3a7fc1';
+          ctx.fill();
+        }
+      });
+    }
+  }
 
   // Path
   if (hoverPath && hoverPath.length > 1) {

@@ -345,6 +345,12 @@ def edge_fade_start() -> float:
 
 
 @lru_cache(maxsize=1)
+def river_movement_penalty() -> int:
+    tc = _terrain()
+    return int(tc.get("map.river", {}).get("movement_penalty", "1"))
+
+
+@lru_cache(maxsize=1)
 def river_params() -> dict[str, float]:
     mg = _mapgen()
     sec = mg.get("rivers", {})
