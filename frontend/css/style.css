@@ -216,6 +216,20 @@ label select:focus { outline: none; border-color: var(--gold-dim); }
 .log-entry.highlight { color: var(--text); }
 .log-entry.warn { color: #c9843c; }
 
+/* ── Center panel ────────────────────────────────────────────────────────── */
+#center-panel {
+  width: 150px;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cp-value { color: var(--gold); font-size: 0.82rem; margin-bottom: 0.15rem; text-transform: capitalize; }
+.cp-sub   { color: var(--text-dim); font-size: 0.72rem; line-height: 1.5; }
+
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 #sidebar {
   width: var(--sidebar-w);

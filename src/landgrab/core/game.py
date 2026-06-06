@@ -258,6 +258,15 @@ def _dijkstra(
     tx: int, ty: int,
     width: int, height: int,
 ) -> tuple[list[tuple[int, int]] | None, int]:
+    """Dijkstra with diagonal cost formula from terrain.config.
+
+    Cardinal: cost = destination.move_cost
+    Diagonal: cost = round(a/2 + (b/2) * sqrt(b))
+              where a = origin.move_cost, b = destination.move_cost
+    """
+    from landgrab.core.config import die_sides
+    _die = die_sides()
+
     dist: dict[tuple[int, int], int] = {(sx, sy): 0}
     prev: dict[tuple[int, int], tuple[int, int] | None] = {(sx, sy): None}
     heap: list[tuple[int, int, int]] = [(0, sx, sy)]
@@ -268,6 +277,8 @@ def _dijkstra(
             break
         if cost > dist.get((x, y), 10**9):
             continue
+        origin_tile = tmap.get((x, y))
+        origin_cost = getattr(origin_tile, "move_cost", None) or 1
         for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
             nx, ny = x + dx, y + dy
             if not (0 <= nx < width and 0 <= ny < height):
@@ -275,8 +286,14 @@ def _dijkstra(
             tile = tmap.get((nx, ny))
             if tile is None:
                 continue
-            step_cost = getattr(tile, "move_cost", None)
-            if step_cost is None:
+            b = getattr(tile, "move_cost", None)
+            if b is None:
+                continue
+            if dx != 0 and dy != 0:  # diagonal
+                step_cost = round(origin_cost / 2 + (b / 2) * (b ** 0.5))
+            else:
+                step_cost = b
+            if step_cost >= _die:  # treat ≥ die ceiling as impassable
                 continue
             new_cost = cost + step_cost
             if new_cost < dist.get((nx, ny), 10**9):

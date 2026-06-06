@@ -74,10 +74,11 @@ let mapMode  = 'terrain';
 const camera = { zoom: 1.0 };
 
 // Hover state
-let hoveredTile  = null;
-let hoverPath    = null;
-let hoverCost    = null;
-let tooltipTimer = null;
+let hoveredTile   = null;
+let hoverPath     = null;   // path tiles (only when reachable)
+let hoverCost     = null;   // cost if reachable, else null
+let hoverFullCost = null;   // always the minimum path cost (for tooltip even if OOR)
+let tooltipTimer  = null;
 
 // Pan state
 let isPanning = false;
@@ -194,7 +195,22 @@ function clientToTile(clientX, clientY) {
 }
 
 // ── Client-side Dijkstra ──────────────────────────────────────────────────
-// Uses tile.move_cost from server — no hardcoded cost table needed.
+// Uses tile.move_cost from server.
+// Diagonal cost formula (terrain.config): round(a/2 + (b/2) * sqrt(b))
+//   where a = origin tile move_cost, b = destination tile move_cost.
+// Cardinal cost: b (destination only).
+const DIE_SIDES = 8;  // matches terrain.config [constants] die
+
+function stepCost(originTile, destTile, dx, dy) {
+  const b = destTile.move_cost;
+  if (b == null) return null;
+  if (dx !== 0 && dy !== 0) {
+    const a = originTile?.move_cost ?? b;
+    const c = Math.round(a / 2 + (b / 2) * Math.sqrt(b));
+    return c >= DIE_SIDES ? null : c;  // ≥ ceiling = impassable
+  }
+  return b;
+}
 
 function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
   if (!G) return null;
@@ -202,7 +218,6 @@ function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
   const prev = new Map();
   dist.set(`${sx},${sy}`, 0);
 
-  // Simple priority queue (small maps — sort is fine)
   const heap = [[0, sx, sy]];
   while (heap.length) {
     heap.sort((a, b) => a[0] - b[0]);
@@ -210,12 +225,13 @@ function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
     const key = `${x},${y}`;
     if (x === tx && y === ty) break;
     if (cost > (dist.get(key) ?? Infinity)) continue;
+    const originTile = getTile(x, y);
     for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]]) {
       const nx = x + dx, ny = y + dy;
       if (nx < 0 || ny < 0 || nx >= G.map_width || ny >= G.map_height) continue;
       const tile = getTile(nx, ny);
       if (!tile) continue;
-      const step = tile.move_cost;
+      const step = stepCost(originTile, tile, dx, dy);
       if (step == null) continue;
       const nc = cost + step;
       if (nc > maxCost) continue;
@@ -231,7 +247,11 @@ function dijkstra(sx, sy, tx, ty, maxCost = Infinity) {
   if (!dist.has(tk)) return null;
   const path = [];
   let cur = tk;
-  while (cur) { const [cx, cy] = cur.split(',').map(Number); path.unshift({x:cx, y:cy}); cur = prev.get(cur) ?? null; }
+  while (cur) {
+    const [cx, cy] = cur.split(',').map(Number);
+    path.unshift({x: cx, y: cy});
+    cur = prev.get(cur) ?? null;
+  }
   return { cost: dist.get(tk), path };
 }
 
@@ -344,6 +364,23 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ── Center panel ──────────────────────────────────────────────────────────
+function updateCenterPanel(tile) {
+  if (!tile || !G) return;
+  const t = getTile(tile.x, tile.y);
+  if (!t) return;
+  const modLabel = t.modifier && t.modifier !== 'flat' ? ` · ${t.modifier}` : '';
+  const riverLabel = t.is_river ? ' · river' : '';
+  document.getElementById('cp-terrain').textContent = t.terrain + modLabel + riverLabel;
+  document.getElementById('cp-coords').textContent  = `(${tile.x}, ${tile.y})`;
+  const mc = t.move_cost;
+  if (mc == null) {
+    document.getElementById('cp-cost').textContent = 'Impassable';
+  } else {
+    document.getElementById('cp-cost').textContent = `Entry: ${mc} MP`;
+  }
+}
+
 // ── Hover ─────────────────────────────────────────────────────────────────
 canvas.addEventListener('mousemove', (e) => {
   if (isPanning) return;
@@ -354,14 +391,18 @@ canvas.addEventListener('mousemove', (e) => {
   if (changed) {
     clearHover();
     hoveredTile = tile;
-    if (G.phase === 'move' && G.player.movement_remaining > 0) {
+    if (G.phase === 'move') {
       const [px, py] = G.player.position;
       if (tile.x !== px || tile.y !== py) {
-        const r = dijkstra(px, py, tile.x, tile.y, G.player.movement_remaining);
-        hoverPath = r?.path ?? null;
-        hoverCost = r?.cost ?? null;
+        const r = dijkstra(px, py, tile.x, tile.y);
+        hoverFullCost = r?.cost ?? null;
+        if (r && r.cost <= G.player.movement_remaining) {
+          hoverPath = r.path;
+          hoverCost = r.cost;
+        }
       }
     }
+    updateCenterPanel(tile);
     renderMap();
     tooltipTimer = setTimeout(() => showTooltip(tile, e.clientX, e.clientY), 500);
   }
@@ -372,10 +413,11 @@ canvas.addEventListener('mouseleave', clearHover);
 
 function clearHover() {
   clearTimeout(tooltipTimer);
-  tooltipTimer = null;
-  hoveredTile  = null;
-  hoverPath    = null;
-  hoverCost    = null;
+  tooltipTimer  = null;
+  hoveredTile   = null;
+  hoverPath     = null;
+  hoverCost     = null;
+  hoverFullCost = null;
   tooltip.classList.add('hidden');
   if (G) renderMap();
 }
@@ -401,12 +443,17 @@ function showTooltip(tile, mx, my) {
     if (tile.x === px && tile.y === py) {
       costEl.textContent = 'Current position';
       costEl.className   = '';
-    } else if (hoverCost != null) {
-      costEl.textContent = `Path cost: ${hoverCost} MP  (${mp - hoverCost} left)`;
-      costEl.className   = 'reachable';
+    } else if (hoverFullCost != null) {
+      if (hoverFullCost <= mp) {
+        costEl.textContent = `Path: ${hoverFullCost} MP  (${mp - hoverFullCost} left)`;
+        costEl.className   = 'reachable';
+      } else {
+        costEl.textContent = `Needs ${hoverFullCost} MP  (have ${mp})`;
+        costEl.className   = 'unreachable';
+      }
     } else {
-      costEl.textContent = 'Out of reach';
-      costEl.className   = 'unreachable';
+      costEl.textContent = 'No path';
+      costEl.className   = 'impassable';
     }
   } else {
     costEl.textContent = `Enter cost: ${mc} MP`;
@@ -444,14 +491,17 @@ async function doMoveTo(tx, ty) {
   const result = await api('POST', `/api/games/${G.game_id}/move-to`, { tx, ty });
   if (!result) return;
   G = result.game_state;
-  // Recompute hover path from new position
-  hoverPath = null; hoverCost = null;
-  if (hoveredTile && G.phase === 'move' && G.player.movement_remaining > 0) {
+  // Recompute hover from new position
+  hoverPath = null; hoverCost = null; hoverFullCost = null;
+  if (hoveredTile && G.phase === 'move') {
     const [px, py] = G.player.position;
     if (hoveredTile.x !== px || hoveredTile.y !== py) {
-      const r = dijkstra(px, py, hoveredTile.x, hoveredTile.y, G.player.movement_remaining);
-      hoverPath = r?.path ?? null;
-      hoverCost = r?.cost ?? null;
+      const r = dijkstra(px, py, hoveredTile.x, hoveredTile.y);
+      hoverFullCost = r?.cost ?? null;
+      if (r && r.cost <= G.player.movement_remaining) {
+        hoverPath = r.path;
+        hoverCost = r.cost;
+      }
     }
   }
   syncUI();
