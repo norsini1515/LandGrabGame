@@ -87,7 +87,7 @@ def generate_map(
         )
 
     # 4. Voronoi expansion — each unassigned land tile gets nearest seed's terrain
-    _voronoi_assign(terrain_str, seed_positions, land_tiles, rng)
+    _voronoi_assign(terrain_str, seed_positions, land_tiles, rng, height)
 
     # Fallback: any still-unassigned
     for pos, t in terrain_str.items():
@@ -288,41 +288,86 @@ def _pick_terrain(
 
 
 def _apply_latitude_bias(weights: dict[str, float], lat: float) -> None:
+    """Apply geographic latitude bias. lat=0 at map center, 1.0 at poles (edges).
+
+    Cold biomes (tundra, frozen_tundra):
+      lat 0–0.5  → near-zero (0–5% of base weight)
+      lat 0.5–0.7 → gradual rise from suppressed to neutral
+      lat 0.7–1.0 → boosted; frozen_tundra more aggressively polar than tundra
+
+    Warm biomes (jungle, desert, deep_desert):
+      slight boost below lat 0.3, suppressed above lat 0.5
+    """
+    # Cold biome factors
+    if lat < 0.5:
+        tundra_f = lat * 0.10          # 0.0 → 0.05
+        frozen_f = lat * 0.04          # 0.0 → 0.02
+    elif lat < 0.7:
+        t = (lat - 0.5) / 0.2         # 0 → 1
+        tundra_f = 0.05 + t * 0.95    # 0.05 → 1.0
+        frozen_f = 0.02 + t * 0.48    # 0.02 → 0.5
+    else:
+        t = (lat - 0.7) / 0.3         # 0 → 1
+        tundra_f = 1.0 + t * 4.0      # 1.0 → 5.0
+        frozen_f = 0.5 + t * 7.5      # 0.5 → 8.0
+
+    weights["tundra"]        = weights.get("tundra",        0.0) * max(0.005, tundra_f)
+    weights["frozen_tundra"] = weights.get("frozen_tundra", 0.0) * max(0.002, frozen_f)
+
+    # Warm biome factors
+    if lat < 0.3:
+        warm_f = 1.25
+    elif lat < 0.5:
+        warm_f = 1.0
+    else:
+        warm_f = max(0.0, 1.0 - (lat - 0.5) * 2.0)   # 1.0 → 0 over lat 0.5→1.0
+    for warm in ("jungle", "desert", "deep_desert"):
+        weights[warm] = weights.get(warm, 0.0) * warm_f
+
+    # Marsh reduced at high latitudes
     if lat > 0.6:
-        factor = (lat - 0.6) / 0.4
-        for cold in ("tundra", "frozen_tundra"):
-            weights[cold] = weights.get(cold, 0.0) * (1.0 + 4.0 * factor)
-        for warm in ("jungle", "desert", "deep_desert"):
-            weights[warm] = weights.get(warm, 0.0) * (1.0 - 0.8 * factor)
+        weights["marsh"] = weights.get("marsh", 0.0) * max(0.15, 1.0 - (lat - 0.6) * 2.0)
 
 
 # ---------------------------------------------------------------------------
 # Voronoi terrain expansion
 # ---------------------------------------------------------------------------
 
+_COLD_BIOMES: frozenset[str] = frozenset({"tundra", "frozen_tundra"})
+_COLD_LAT_THRESHOLD = 0.55  # below this latitude cold biomes are never placed
+
+
 def _voronoi_assign(
     terrain_str: dict[tuple[int, int], str],
     seed_positions: list[tuple[int, int]],
     land_tiles: list[tuple[int, int]],
     rng: random.Random,
+    height: int,
 ) -> None:
     """Assign each unassigned land tile to the nearest seed's terrain.
 
-    Gaussian jitter on the distance metric makes boundaries irregular.
+    Gaussian jitter makes boundaries irregular. Cold biomes are not allowed
+    to claim mid-latitude tiles (lat < _COLD_LAT_THRESHOLD).
     """
     if not seed_positions:
         return
     for (x, y) in land_tiles:
         if terrain_str[(x, y)] != "":
             continue
+        lat = abs(y / max(1, height) - 0.5) * 2
+        allow_cold = lat >= _COLD_LAT_THRESHOLD
+
         best_d2 = float("inf")
         best_t  = "plain"
         for sx, sy in seed_positions:
+            t = terrain_str[(sx, sy)]
+            if t in _COLD_BIOMES and not allow_cold:
+                continue  # don't let polar seeds claim mid-latitude tiles
             jitter = rng.gauss(0, 2.5) ** 2
             d2 = (x - sx) ** 2 + (y - sy) ** 2 + jitter
             if d2 < best_d2:
                 best_d2 = d2
-                best_t  = terrain_str[(sx, sy)]
+                best_t  = t
         terrain_str[(x, y)] = best_t
 
 

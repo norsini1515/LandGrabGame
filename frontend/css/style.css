@@ -231,12 +231,12 @@ label select:focus { outline: none; border-color: var(--gold-dim); }
 .log-entry.highlight { color: var(--text); }
 .log-entry.warn { color: #c9843c; }
 
-/* ── Center panel (info panel, right of main sidebar) ────────────────────── */
+/* ── Center panel (tile info — left of map) ─────────────────────────────── */
 #center-panel {
   width: 155px;
   flex-shrink: 0;
   background: var(--bg2);
-  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;

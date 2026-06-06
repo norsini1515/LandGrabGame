@@ -115,7 +115,21 @@
     <!-- Main game content (map + sidebar) -->
     <div id="game-content">
 
-      <!-- Left: scrollable map + collapsible log -->
+      <!-- Info panel (tile info — left of map) -->
+      <div id="center-panel">
+        <div class="sidebar-section">
+          <div class="section-label">TILE INFO</div>
+          <div id="cp-terrain" class="cp-value">—</div>
+          <div id="cp-coords" class="cp-sub">—</div>
+          <div id="cp-cost" class="cp-sub">—</div>
+        </div>
+        <div class="sidebar-section">
+          <div class="section-label">TERRITORY</div>
+          <div class="cp-sub" style="font-style:italic;opacity:0.4">Unclaimed</div>
+        </div>
+      </div>
+
+      <!-- Center: scrollable map + collapsible log -->
       <div id="game-left">
         <div id="map-wrapper">
           <canvas id="map-canvas"></canvas>
@@ -190,19 +204,6 @@
 
       </div>
 
-      <!-- Info panel (tile info — right of sidebar) -->
-      <div id="center-panel">
-        <div class="sidebar-section">
-          <div class="section-label">TILE INFO</div>
-          <div id="cp-terrain" class="cp-value">—</div>
-          <div id="cp-coords" class="cp-sub">—</div>
-          <div id="cp-cost" class="cp-sub">—</div>
-        </div>
-        <div class="sidebar-section">
-          <div class="section-label">TERRITORY</div>
-          <div class="cp-sub" style="font-style:italic;opacity:0.4">Unclaimed</div>
-        </div>
-      </div>
 
     </div>
   </div>
