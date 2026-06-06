@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.29.0",
     "pydantic>=2.7.0",
     "numpy>=1.26.0",
+    "opensimplex>=0.4.5",
 ]
 
 [project.optional-dependencies]
@@ -22,9 +23,6 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
 ]
-# Perlin noise — requires a C compiler (MSVC on Windows, gcc/clang on Linux/Mac).
-# The map generator falls back to seeded pseudo-random if this isn't installed.
-perlin = ["noise>=1.2.2"]
 
 [project.scripts]
 landgrab = "landgrab.main:run"
