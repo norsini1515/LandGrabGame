@@ -1,11 +1,11 @@
-"""Procedural map generation using layered Perlin noise."""
+"""Procedural map generation using layered OpenSimplex noise."""
 
 from __future__ import annotations
 
 import random
 
 try:
-    from noise import pnoise2  # type: ignore[import]
+    import opensimplex  # type: ignore[import]
     _HAS_NOISE = True
 except ImportError:
     _HAS_NOISE = False
@@ -44,23 +44,20 @@ def _perlin_elevation(x: int, y: int, width: int, height: int, seed: int) -> flo
         rng = random.Random(seed ^ (x * 73856093) ^ (y * 19349663))
         base = rng.random()
     else:
-        scale = 0.07
-        octaves = 6
-        persistence = 0.5
-        lacunarity = 2.0
-        offset_x = seed % 1000
-        offset_y = (seed // 1000) % 1000
-        raw = pnoise2(
-            x * scale + offset_x,
-            y * scale + offset_y,
-            octaves=octaves,
-            persistence=persistence,
-            lacunarity=lacunarity,
-            repeatx=10000,
-            repeaty=10000,
-        )
-        # pnoise2 returns roughly [-1, 1] → normalize to [0, 1]
-        base = (raw + 1.0) / 2.0
+        # Layered octaves of OpenSimplex noise for a natural-looking heightmap
+        opensimplex.seed(seed)
+        scale = 0.06
+        value = 0.0
+        amplitude = 1.0
+        frequency = 1.0
+        max_value = 0.0
+        for _ in range(6):  # 6 octaves
+            value += opensimplex.noise2(x * scale * frequency, y * scale * frequency) * amplitude
+            max_value += amplitude
+            amplitude *= 0.5   # persistence
+            frequency *= 2.0   # lacunarity
+        # opensimplex returns [-1, 1] → normalize to [0, 1]
+        base = (value / max_value + 1.0) / 2.0
 
     # Fade edges toward ocean to create a continent feel
     edge_fade = _edge_fade(x, y, width, height)
