@@ -53,9 +53,12 @@
   <!-- GAME SCREEN -->
   <div id="screen-game" class="screen">
 
-    <!-- Left: map + log -->
+    <!-- Left: scrollable map + log -->
     <div id="game-left">
-      <canvas id="map-canvas"></canvas>
+      <!-- map-wrapper becomes the scrollable viewport; canvas is sized to full zoomed map -->
+      <div id="map-wrapper">
+        <canvas id="map-canvas"></canvas>
+      </div>
       <div id="message-log"></div>
     </div>
 
@@ -70,8 +73,18 @@
       </div>
 
       <div class="sidebar-section" id="sidebar-dice">
-        <div class="section-label">MOVEMENT</div>
+        <!-- Header row: label + mini die result (shown after roll) -->
+        <div class="movement-header">
+          <span class="section-label" style="margin-bottom:0">MOVEMENT</span>
+          <div id="die-result-mini" class="hidden">
+            <svg viewBox="0 0 60 60" class="die-mini-svg" xmlns="http://www.w3.org/2000/svg">
+              <polygon points="30,4 56,20 56,40 30,56 4,40 4,20" class="die-hex"/>
+              <text id="die-mini-face" x="30" y="37" text-anchor="middle" class="die-text"></text>
+            </svg>
+          </div>
+        </div>
 
+        <!-- Big die (roll phase) -->
         <div id="dice-roll-area">
           <button id="btn-roll-die" class="die-btn" title="Click to roll">
             <svg id="die-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -82,6 +95,7 @@
           <div id="dice-prompt">Roll to begin your turn</div>
         </div>
 
+        <!-- MP bar + hint (move phase) -->
         <div id="move-info" class="hidden">
           <div class="move-bar-wrap">
             <div class="move-bar-label">
@@ -94,7 +108,7 @@
               <div id="move-bar-fill"></div>
             </div>
           </div>
-          <div class="move-hint">Click a tile to move</div>
+          <div class="move-hint">Click a tile · scroll to zoom · middle-drag to pan</div>
         </div>
       </div>
 
@@ -115,7 +129,7 @@
     </div>
   </div>
 
-  <!-- Tile tooltip (absolutely positioned, shown on hover) -->
+  <!-- Tile tooltip -->
   <div id="tile-tooltip" class="hidden">
     <div id="tt-terrain"></div>
     <div id="tt-owner"></div>
