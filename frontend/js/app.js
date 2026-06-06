@@ -16,9 +16,7 @@ function show(name) {
 
 // ── Navigation ────────────────────────────────────────────────────────────
 document.getElementById('btn-new-game').addEventListener('click', () => {
-  // Auto-populate seed so the user can see and replay the exact map
-  document.getElementById('input-seed').value =
-    Math.floor(Math.random() * 2147483647);
+  document.getElementById('input-seed').value = '';
   show('newGame');
 });
 document.getElementById('btn-load-game').addEventListener('click', () => { loadSaveList(); show('load'); });
@@ -211,8 +209,8 @@ function stepCost(originTile, destTile, dx, dy) {
   if (b == null) return null;
   if (dx !== 0 && dy !== 0) {
     const a = originTile?.move_cost ?? b;
-    const c = Math.round(a / 2 + (b / 2) * Math.sqrt(b));
-    return c >= DIE_SIDES ? null : c;  // ≥ ceiling = impassable
+    const c = a / 2 + (b / 2) * Math.sqrt(b);  // float, no rounding until display
+    return c >= DIE_SIDES ? null : c;
   }
   return b;
 }
@@ -288,8 +286,8 @@ function syncUI() {
   // Move info
   document.getElementById('move-info').classList.toggle('hidden', isRoll);
   if (!isRoll) {
-    document.getElementById('move-remaining').textContent = p.movement_remaining;
-    document.getElementById('move-total').textContent     = p.movement_total;
+    document.getElementById('move-remaining').textContent = Math.round(p.movement_remaining);
+    document.getElementById('move-total').textContent     = Math.round(p.movement_total);
     const pct = p.movement_total > 0 ? (p.movement_remaining / p.movement_total) * 100 : 0;
     document.getElementById('move-bar-fill').style.width = `${pct}%`;
   }
@@ -390,7 +388,7 @@ function updateCenterPanel(tile) {
   if (mc == null) {
     document.getElementById('cp-cost').textContent = 'Impassable';
   } else {
-    document.getElementById('cp-cost').textContent = `Entry: ${mc} MP`;
+    document.getElementById('cp-cost').textContent = `Entry: ${Math.round(mc)} MP`;
   }
 }
 
@@ -458,10 +456,10 @@ function showTooltip(tile, mx, my) {
       costEl.className   = '';
     } else if (hoverFullCost != null) {
       if (hoverFullCost <= mp) {
-        costEl.textContent = `Path: ${hoverFullCost} MP  (${mp - hoverFullCost} left)`;
+        costEl.textContent = `Path: ${Math.round(hoverFullCost)} MP  (${Math.round(mp - hoverFullCost)} left)`;
         costEl.className   = 'reachable';
       } else {
-        costEl.textContent = `Needs ${hoverFullCost} MP  (have ${mp})`;
+        costEl.textContent = `Needs ${Math.round(hoverFullCost)} MP  (have ${Math.round(mp)})`;
         costEl.className   = 'unreachable';
       }
     } else {
@@ -469,7 +467,7 @@ function showTooltip(tile, mx, my) {
       costEl.className   = 'impassable';
     }
   } else {
-    costEl.textContent = `Enter cost: ${mc} MP`;
+    costEl.textContent = `Enter cost: ${Math.round(mc)} MP`;
     costEl.className   = '';
   }
   tooltip.classList.remove('hidden');
@@ -566,13 +564,24 @@ function drawTerrainSymbol(ctx, tile, tw, th) {
   const s  = Math.min(tw, th);
 
   if (tile.modifier === 'hills') {
-    const r    = s * 0.17;
-    const midY = py + th * 0.65;
+    const r    = s * 0.20;
+    const midY = py + th * 0.67;
     const cx   = px + tw * 0.5;
     const gap  = r * 1.05;
-    ctx.lineWidth   = Math.max(0.5, s * 0.045);
-    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-    ctx.fillStyle   = 'rgba(255,255,255,0.20)';
+    const lw   = Math.max(0.7, s * 0.055);
+    // Dark shadow for contrast on any background
+    ctx.lineWidth   = lw + Math.max(1, s * 0.05);
+    ctx.strokeStyle = 'rgba(0,0,0,0.50)';
+    for (const ox of [-gap, gap]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, midY, r, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.stroke();
+    }
+    // White bumps
+    ctx.lineWidth   = lw;
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle   = 'rgba(255,255,255,0.38)';
     for (const ox of [-gap, gap]) {
       ctx.beginPath();
       ctx.arc(cx + ox, midY, r, Math.PI, 0, false);
@@ -582,15 +591,25 @@ function drawTerrainSymbol(ctx, tile, tw, th) {
     }
 
   } else if (tile.modifier === 'mountain') {
-    const halfW    = s * 0.29;
+    const halfW    = s * 0.31;
     const cx       = px + tw * 0.5;
-    const top      = py + th * 0.16;
-    const bot      = py + th * 0.84;
-    const snowLine = py + th * 0.40;
-    ctx.lineWidth   = Math.max(0.5, s * 0.045);
-    // Body
-    ctx.fillStyle   = 'rgba(255,255,255,0.18)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.50)';
+    const top      = py + th * 0.13;
+    const bot      = py + th * 0.87;
+    const snowLine = py + th * 0.37;
+    const lw       = Math.max(0.7, s * 0.055);
+    // Dark shadow
+    ctx.lineWidth   = lw + Math.max(1, s * 0.05);
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx + halfW, bot);
+    ctx.lineTo(cx - halfW, bot);
+    ctx.closePath();
+    ctx.stroke();
+    // Mountain body
+    ctx.lineWidth   = lw;
+    ctx.fillStyle   = 'rgba(255,255,255,0.28)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.70)';
     ctx.beginPath();
     ctx.moveTo(cx, top);
     ctx.lineTo(cx + halfW, bot);
@@ -599,12 +618,11 @@ function drawTerrainSymbol(ctx, tile, tw, th) {
     ctx.fill();
     ctx.stroke();
     // Snow cap
-    ctx.fillStyle   = 'rgba(255,255,255,0.55)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.0)';
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.beginPath();
     ctx.moveTo(cx, top);
-    ctx.lineTo(cx + halfW * 0.43, snowLine);
-    ctx.lineTo(cx - halfW * 0.43, snowLine);
+    ctx.lineTo(cx + halfW * 0.44, snowLine);
+    ctx.lineTo(cx - halfW * 0.44, snowLine);
     ctx.closePath();
     ctx.fill();
   }
@@ -725,9 +743,9 @@ function renderMap() {
       ctx.textAlign    = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = 'rgba(0,0,0,0.8)';
-      ctx.fillText(`${hoverCost}`, bx + 1, by + 1);
+      ctx.fillText(`${Math.round(hoverCost)}`, bx + 1, by + 1);
       ctx.fillStyle = '#f064b4';
-      ctx.fillText(`${hoverCost}`, bx, by);
+      ctx.fillText(`${Math.round(hoverCost)}`, bx, by);
     }
   }
 
