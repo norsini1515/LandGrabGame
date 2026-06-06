@@ -62,28 +62,16 @@
     <!-- Right: sidebar -->
     <div id="sidebar">
 
-      <!-- Lord info -->
       <div class="sidebar-section" id="sidebar-lord">
         <div id="hud-name" class="lord-name"></div>
-        <div class="hud-row">
-          <span class="hud-label">Turn</span>
-          <span id="hud-turn">1</span>
-        </div>
-        <div class="hud-row">
-          <span class="hud-label">Position</span>
-          <span id="hud-pos">—</span>
-        </div>
-        <div class="hud-row">
-          <span class="hud-label">Gold</span>
-          <span id="hud-gold">100</span>
-        </div>
+        <div class="hud-row"><span class="hud-label">Turn</span><span id="hud-turn">1</span></div>
+        <div class="hud-row"><span class="hud-label">Position</span><span id="hud-pos">—</span></div>
+        <div class="hud-row"><span class="hud-label">Gold</span><span id="hud-gold">100</span></div>
       </div>
 
-      <!-- Dice / movement section -->
       <div class="sidebar-section" id="sidebar-dice">
         <div class="section-label">MOVEMENT</div>
 
-        <!-- Roll phase -->
         <div id="dice-roll-area">
           <button id="btn-roll-die" class="die-btn" title="Click to roll">
             <svg id="die-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
@@ -94,7 +82,6 @@
           <div id="dice-prompt">Roll to begin your turn</div>
         </div>
 
-        <!-- Move phase -->
         <div id="move-info" class="hidden">
           <div class="move-bar-wrap">
             <div class="move-bar-label">
@@ -107,31 +94,16 @@
               <div id="move-bar-fill"></div>
             </div>
           </div>
-
-          <!-- Direction pad -->
-          <div id="movement-pad">
-            <button class="dir-btn" data-dx="-1" data-dy="-1">↖</button>
-            <button class="dir-btn" data-dx="0"  data-dy="-1">↑</button>
-            <button class="dir-btn" data-dx="1"  data-dy="-1">↗</button>
-            <button class="dir-btn" data-dx="-1" data-dy="0" >←</button>
-            <button class="dir-btn wait-btn" data-dx="0" data-dy="0">·</button>
-            <button class="dir-btn" data-dx="1"  data-dy="0" >→</button>
-            <button class="dir-btn" data-dx="-1" data-dy="1" >↙</button>
-            <button class="dir-btn" data-dx="0"  data-dy="1" >↓</button>
-            <button class="dir-btn" data-dx="1"  data-dy="1" >↘</button>
-          </div>
+          <div class="move-hint">Click a tile to move</div>
         </div>
       </div>
 
-      <!-- Spacer -->
       <div class="sidebar-spacer"></div>
 
-      <!-- End turn -->
       <div class="sidebar-section" id="sidebar-end">
         <button id="btn-end-turn" class="end-turn-btn" disabled>End Turn</button>
       </div>
 
-      <!-- Map modes -->
       <div class="sidebar-section" id="sidebar-modes">
         <div class="section-label">MAP MODE</div>
         <div id="map-mode-btns">
@@ -140,8 +112,15 @@
         </div>
       </div>
 
-    </div><!-- /sidebar -->
-  </div><!-- /screen-game -->
+    </div>
+  </div>
+
+  <!-- Tile tooltip (absolutely positioned, shown on hover) -->
+  <div id="tile-tooltip" class="hidden">
+    <div id="tt-terrain"></div>
+    <div id="tt-owner"></div>
+    <div id="tt-cost"></div>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>

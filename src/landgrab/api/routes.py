@@ -11,6 +11,8 @@ from landgrab.models.game_state import (
     GameState,
     MoveRequest,
     MoveResult,
+    MoveToRequest,
+    MoveToResult,
     NewGameRequest,
     RollResult,
 )
@@ -55,6 +57,16 @@ def roll(game_id: str) -> RollResult:
 def move(game_id: str, req: MoveRequest) -> MoveResult:
     try:
         return game_engine.move(game_id, req.dx, req.dy)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Game {game_id!r} not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/games/{game_id}/move-to", response_model=MoveToResult)
+def move_to(game_id: str, req: MoveToRequest) -> MoveToResult:
+    try:
+        return game_engine.move_to(game_id, req.tx, req.ty)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"Game {game_id!r} not found")
     except ValueError as e:

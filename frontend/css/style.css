@@ -257,26 +257,13 @@ label input:focus { outline: none; border-color: var(--gold-dim); }
   transition: width 0.25s ease;
 }
 
-/* Direction pad */
-#movement-pad {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
+.move-hint {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 0.2rem;
+  font-style: italic;
 }
-.dir-btn {
-  aspect-ratio: 1;
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  color: var(--text);
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background 0.1s, border-color 0.1s;
-  padding: 0;
-  line-height: 1;
-}
-.dir-btn:hover:not(:disabled) { background: var(--gold-glow); border-color: var(--gold-dim); }
-.dir-btn:disabled { opacity: 0.25; cursor: default; }
-.wait-btn { color: var(--text-dim); font-size: 1.4rem; }
 
 /* End turn button */
 .end-turn-btn {
@@ -310,3 +297,24 @@ label input:focus { outline: none; border-color: var(--gold-dim); }
 }
 .mode-btn.active { border-color: var(--gold-dim); color: var(--gold); background: var(--gold-glow); }
 .mode-btn:hover:not(.active) { background: rgba(255,255,255,0.04); color: var(--text); }
+
+/* ── Tile Tooltip ─────────────────────────────────────────────────────────── */
+#tile-tooltip {
+  position: fixed;
+  pointer-events: none;
+  z-index: 100;
+  background: rgba(14,12,9,0.92);
+  border: 1px solid var(--gold-dim);
+  padding: 0.45rem 0.65rem;
+  font-size: 0.75rem;
+  color: var(--text);
+  min-width: 110px;
+  backdrop-filter: blur(2px);
+}
+#tile-tooltip.hidden { display: none; }
+#tt-terrain { color: var(--gold); font-size: 0.82rem; margin-bottom: 0.2rem; text-transform: capitalize; }
+#tt-owner   { color: var(--text-dim); font-size: 0.72rem; }
+#tt-cost    { margin-top: 0.25rem; font-size: 0.72rem; }
+#tt-cost.reachable   { color: #8bc34a; }
+#tt-cost.unreachable { color: #c0392b; }
+#tt-cost.impassable  { color: var(--text-dim); }

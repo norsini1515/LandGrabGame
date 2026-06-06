@@ -80,11 +80,26 @@ class MoveRequest(BaseModel):
     dy: int = Field(ge=-1, le=1)
 
 
+class MoveToRequest(BaseModel):
+    tx: int
+    ty: int
+
+
 class MoveResult(BaseModel):
     new_position: tuple[int, int]
     terrain: TerrainType
     move_cost: int
     movement_remaining: int
+    message: str
+    game_state: GameState
+
+
+class MoveToResult(BaseModel):
+    new_position: tuple[int, int]
+    terrain: TerrainType
+    total_cost: int
+    movement_remaining: int
+    path: list[tuple[int, int]]
     message: str
     game_state: GameState
 

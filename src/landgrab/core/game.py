@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import heapq
 import json
 import random
 import uuid
@@ -14,6 +15,7 @@ from landgrab.models.game_state import (
     EndTurnResult,
     GameState,
     MoveResult,
+    MoveToResult,
     Player,
     RollResult,
     SavedGame,
@@ -169,6 +171,93 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
         message=msg,
         game_state=state,
     )
+
+
+def move_to(game_id: str, tx: int, ty: int) -> MoveToResult:
+    """Move player to (tx, ty) via Dijkstra shortest path, spending MP."""
+    state = load_game(game_id)
+    tmap  = tile_map(state)
+
+    if state.phase != TurnPhase.MOVE:
+        raise ValueError("Roll the dice before moving.")
+    if state.player.movement_remaining <= 0:
+        raise ValueError("No movement points remaining. End your turn.")
+
+    px, py = state.player.position
+    if (tx, ty) == (px, py):
+        raise ValueError("Already there.")
+
+    path, total_cost = _dijkstra(tmap, px, py, tx, ty, state.map_width, state.map_height)
+    if path is None:
+        raise ValueError("No passable path to that tile.")
+    if total_cost > state.player.movement_remaining:
+        raise ValueError(
+            f"Path costs {total_cost} MP but you only have {state.player.movement_remaining}."
+        )
+
+    state.player.position = (tx, ty)
+    state.player.movement_remaining -= total_cost
+    _save(state)
+
+    terrain = tmap[(tx, ty)].terrain
+    remaining = state.player.movement_remaining
+    flavor = _TERRAIN_MESSAGES.get(terrain, "You arrive.")
+    msg = f"{flavor} (cost: {total_cost} · remaining: {remaining})"
+
+    return MoveToResult(
+        new_position=(tx, ty),
+        terrain=terrain,
+        total_cost=total_cost,
+        movement_remaining=remaining,
+        path=path,
+        message=msg,
+        game_state=state,
+    )
+
+
+def _dijkstra(
+    tmap: dict[tuple[int, int], object],
+    sx: int, sy: int,
+    tx: int, ty: int,
+    width: int, height: int,
+) -> tuple[list[tuple[int, int]] | None, int]:
+    """Return (path, cost) from (sx,sy) to (tx,ty), or (None, 0) if unreachable."""
+    dist: dict[tuple[int, int], int] = {(sx, sy): 0}
+    prev: dict[tuple[int, int], tuple[int, int] | None] = {(sx, sy): None}
+    heap: list[tuple[int, int, int]] = [(0, sx, sy)]
+
+    while heap:
+        cost, x, y = heapq.heappop(heap)
+        if (x, y) == (tx, ty):
+            break
+        if cost > dist.get((x, y), 10**9):
+            continue
+        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
+            nx, ny = x + dx, y + dy
+            if not (0 <= nx < width and 0 <= ny < height):
+                continue
+            tile = tmap.get((nx, ny))
+            if tile is None:
+                continue
+            step_cost = TERRAIN_MOVE_COST.get(tile.terrain)  # type: ignore[arg-type]
+            if step_cost is None:
+                continue  # impassable
+            new_cost = cost + step_cost
+            if new_cost < dist.get((nx, ny), 10**9):
+                dist[(nx, ny)] = new_cost
+                prev[(nx, ny)] = (x, y)
+                heapq.heappush(heap, (new_cost, nx, ny))
+
+    if (tx, ty) not in prev:
+        return None, 0
+
+    path: list[tuple[int, int]] = []
+    cur: tuple[int, int] | None = (tx, ty)
+    while cur is not None:
+        path.append(cur)
+        cur = prev[cur]
+    path.reverse()
+    return path, dist[(tx, ty)]
 
 
 def end_turn(game_id: str) -> EndTurnResult:
