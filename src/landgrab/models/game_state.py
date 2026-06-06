@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
 from pydantic import BaseModel, Field
 
 
@@ -17,12 +16,28 @@ class TerrainType(str, Enum):
     RIVER = "river"
 
 
+# Movement point cost to enter each terrain type. None = impassable.
+TERRAIN_MOVE_COST: dict[TerrainType, int | None] = {
+    TerrainType.OCEAN:     None,
+    TerrainType.COAST:     1,
+    TerrainType.PLAINS:    1,
+    TerrainType.FOREST:    2,
+    TerrainType.HILLS:     2,
+    TerrainType.MOUNTAINS: 3,
+    TerrainType.RIVER:     1,
+}
+
+
+class TurnPhase(str, Enum):
+    ROLL = "roll"    # waiting for player to roll dice
+    MOVE = "move"    # dice rolled, player may move
+
+
 class Tile(BaseModel):
     x: int
     y: int
     terrain: TerrainType
     elevation: float = Field(ge=0.0, le=1.0)
-    # Future: owner, resources, structures
 
 
 class Player(BaseModel):
@@ -30,6 +45,8 @@ class Player(BaseModel):
     name: str
     position: tuple[int, int]
     gold: int = 100
+    movement_remaining: int = 0
+    movement_total: int = 0
 
 
 class GameState(BaseModel):
@@ -37,9 +54,9 @@ class GameState(BaseModel):
     player: Player
     map_width: int
     map_height: int
-    # Tiles are stored as a flat list, row-major order
     tiles: list[Tile]
     turn: int = 1
+    phase: TurnPhase = TurnPhase.ROLL
     seed: int
 
 
@@ -50,17 +67,30 @@ class NewGameRequest(BaseModel):
     seed: int | None = None
 
 
+class RollResult(BaseModel):
+    roll: int
+    movement_total: int
+    message: str
+    game_state: GameState
+
+
 class MoveRequest(BaseModel):
     game_id: str
-    # dx/dy: -1, 0, or 1
     dx: int = Field(ge=-1, le=1)
     dy: int = Field(ge=-1, le=1)
 
 
 class MoveResult(BaseModel):
     new_position: tuple[int, int]
-    roll: int
     terrain: TerrainType
+    move_cost: int
+    movement_remaining: int
+    message: str
+    game_state: GameState
+
+
+class EndTurnResult(BaseModel):
+    turn: int
     message: str
     game_state: GameState
 
@@ -80,6 +110,5 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-# Utility to build a dict from tiles for fast lookup
 def tile_map(state: GameState) -> dict[tuple[int, int], Tile]:
     return {(t.x, t.y): t for t in state.tiles}

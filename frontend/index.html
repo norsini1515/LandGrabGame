@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
+
   <!-- HOME SCREEN -->
   <div id="screen-home" class="screen active">
     <div class="title-block">
@@ -51,28 +52,96 @@
 
   <!-- GAME SCREEN -->
   <div id="screen-game" class="screen">
-    <div id="game-header">
-      <span id="hud-name"></span>
-      <span id="hud-turn">Turn 1</span>
-      <span id="hud-pos"></span>
-      <span id="hud-gold">💰 100</span>
-    </div>
-    <canvas id="map-canvas"></canvas>
-    <div id="game-footer">
-      <div id="movement-pad">
-        <button class="dir-btn" data-dx="-1" data-dy="-1">↖</button>
-        <button class="dir-btn" data-dx="0"  data-dy="-1">↑</button>
-        <button class="dir-btn" data-dx="1"  data-dy="-1">↗</button>
-        <button class="dir-btn" data-dx="-1" data-dy="0">←</button>
-        <button class="dir-btn wait-btn" data-dx="0" data-dy="0">·</button>
-        <button class="dir-btn" data-dx="1"  data-dy="0">→</button>
-        <button class="dir-btn" data-dx="-1" data-dy="1">↙</button>
-        <button class="dir-btn" data-dx="0"  data-dy="1">↓</button>
-        <button class="dir-btn" data-dx="1"  data-dy="1">↘</button>
-      </div>
+
+    <!-- Left: map + log -->
+    <div id="game-left">
+      <canvas id="map-canvas"></canvas>
       <div id="message-log"></div>
     </div>
-  </div>
+
+    <!-- Right: sidebar -->
+    <div id="sidebar">
+
+      <!-- Lord info -->
+      <div class="sidebar-section" id="sidebar-lord">
+        <div id="hud-name" class="lord-name"></div>
+        <div class="hud-row">
+          <span class="hud-label">Turn</span>
+          <span id="hud-turn">1</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">Position</span>
+          <span id="hud-pos">—</span>
+        </div>
+        <div class="hud-row">
+          <span class="hud-label">Gold</span>
+          <span id="hud-gold">100</span>
+        </div>
+      </div>
+
+      <!-- Dice / movement section -->
+      <div class="sidebar-section" id="sidebar-dice">
+        <div class="section-label">MOVEMENT</div>
+
+        <!-- Roll phase -->
+        <div id="dice-roll-area">
+          <button id="btn-roll-die" class="die-btn" title="Click to roll">
+            <svg id="die-svg" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+              <polygon points="30,4 56,20 56,40 30,56 4,40 4,20" class="die-hex"/>
+              <text id="die-face" x="30" y="37" text-anchor="middle" class="die-text">d8</text>
+            </svg>
+          </button>
+          <div id="dice-prompt">Roll to begin your turn</div>
+        </div>
+
+        <!-- Move phase -->
+        <div id="move-info" class="hidden">
+          <div class="move-bar-wrap">
+            <div class="move-bar-label">
+              <span id="move-remaining">0</span>
+              <span class="move-sep">/</span>
+              <span id="move-total">0</span>
+              <span class="move-unit">MP</span>
+            </div>
+            <div class="move-bar-track">
+              <div id="move-bar-fill"></div>
+            </div>
+          </div>
+
+          <!-- Direction pad -->
+          <div id="movement-pad">
+            <button class="dir-btn" data-dx="-1" data-dy="-1">↖</button>
+            <button class="dir-btn" data-dx="0"  data-dy="-1">↑</button>
+            <button class="dir-btn" data-dx="1"  data-dy="-1">↗</button>
+            <button class="dir-btn" data-dx="-1" data-dy="0" >←</button>
+            <button class="dir-btn wait-btn" data-dx="0" data-dy="0">·</button>
+            <button class="dir-btn" data-dx="1"  data-dy="0" >→</button>
+            <button class="dir-btn" data-dx="-1" data-dy="1" >↙</button>
+            <button class="dir-btn" data-dx="0"  data-dy="1" >↓</button>
+            <button class="dir-btn" data-dx="1"  data-dy="1" >↘</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spacer -->
+      <div class="sidebar-spacer"></div>
+
+      <!-- End turn -->
+      <div class="sidebar-section" id="sidebar-end">
+        <button id="btn-end-turn" class="end-turn-btn" disabled>End Turn</button>
+      </div>
+
+      <!-- Map modes -->
+      <div class="sidebar-section" id="sidebar-modes">
+        <div class="section-label">MAP MODE</div>
+        <div id="map-mode-btns">
+          <button class="mode-btn active" data-mode="terrain">Terrain</button>
+          <button class="mode-btn" data-mode="elevation">Elevation</button>
+        </div>
+      </div>
+
+    </div><!-- /sidebar -->
+  </div><!-- /screen-game -->
 
   <script src="/js/app.js"></script>
 </body>
