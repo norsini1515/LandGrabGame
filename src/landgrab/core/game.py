@@ -6,6 +6,7 @@ import heapq
 import json
 import random
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -184,8 +185,8 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
             movement_remaining=state.player.movement_remaining,
             message=(
                 f"Not enough movement. {target.terrain.value.title()} "
-                f"({target.modifier.value}) costs {cost}, "
-                f"you have {state.player.movement_remaining} left."
+                f"({target.modifier.value}) costs {cost:g}, "
+                f"you have {state.player.movement_remaining:g} left."
             ),
             game_state=state,
         )
@@ -196,7 +197,7 @@ def move(game_id: str, dx: int, dy: int) -> MoveResult:
 
     flavor = _TERRAIN_MESSAGES.get(target.terrain, "You move forward.")
     mod_msg = _MODIFIER_MESSAGES.get(target.modifier, "")
-    msg = f"{flavor}{mod_msg} (cost: {cost} · remaining: {state.player.movement_remaining})"
+    msg = f"{flavor}{mod_msg} (cost: {cost:g} · remaining: {state.player.movement_remaining:g})"
 
     return MoveResult(
         new_position=(nx, ny),
@@ -228,7 +229,7 @@ def move_to(game_id: str, tx: int, ty: int) -> MoveToResult:
         raise ValueError("No passable path to that tile.")
     if total_cost > state.player.movement_remaining:
         raise ValueError(
-            f"Path costs {total_cost} MP but you only have {state.player.movement_remaining}."
+            f"Path costs {total_cost:g} MP but you only have {state.player.movement_remaining:g}."
         )
 
     state.player.position = (tx, ty)
@@ -238,7 +239,7 @@ def move_to(game_id: str, tx: int, ty: int) -> MoveToResult:
     target = tmap[(tx, ty)]
     flavor = _TERRAIN_MESSAGES.get(target.terrain, "You arrive.")
     mod_msg = _MODIFIER_MESSAGES.get(target.modifier, "")
-    msg = f"{flavor}{mod_msg} (cost: {total_cost} · remaining: {state.player.movement_remaining})"
+    msg = f"{flavor}{mod_msg} (cost: {total_cost:g} · remaining: {state.player.movement_remaining:g})"
 
     return MoveToResult(
         new_position=(tx, ty),
@@ -253,32 +254,32 @@ def move_to(game_id: str, tx: int, ty: int) -> MoveToResult:
 
 
 def _dijkstra(
-    tmap: dict[tuple[int, int], object],
+    tmap: Mapping[tuple[int, int], object],
     sx: int, sy: int,
     tx: int, ty: int,
     width: int, height: int,
-) -> tuple[list[tuple[int, int]] | None, int]:
+) -> tuple[list[tuple[int, int]] | None, float]:
     """Dijkstra with diagonal cost formula from terrain.config.
 
     Cardinal: cost = destination.move_cost
-    Diagonal: cost = round(a/2 + (b/2) * sqrt(b))
+    Diagonal: cost = a/2 + (b/2) * sqrt(b)
               where a = origin.move_cost, b = destination.move_cost
     """
     from landgrab.core.config import die_sides
     _die = die_sides()
 
-    dist: dict[tuple[int, int], int] = {(sx, sy): 0}
+    dist: dict[tuple[int, int], float] = {(sx, sy): 0.0}
     prev: dict[tuple[int, int], tuple[int, int] | None] = {(sx, sy): None}
-    heap: list[tuple[int, int, int]] = [(0, sx, sy)]
+    heap: list[tuple[float, int, int]] = [(0.0, sx, sy)]
 
     while heap:
         cost, x, y = heapq.heappop(heap)
         if (x, y) == (tx, ty):
             break
-        if cost > dist.get((x, y), 10**9):
+        if cost > dist.get((x, y), 1e18):
             continue
         origin_tile = tmap.get((x, y))
-        origin_cost = getattr(origin_tile, "move_cost", None) or 1
+        origin_cost = getattr(origin_tile, "move_cost", None) or 1.0
         for dx, dy in [(-1,0),(1,0),(0,-1),(0,1),(-1,-1),(1,-1),(-1,1),(1,1)]:
             nx, ny = x + dx, y + dy
             if not (0 <= nx < width and 0 <= ny < height):
@@ -290,19 +291,19 @@ def _dijkstra(
             if b is None:
                 continue
             if dx != 0 and dy != 0:  # diagonal
-                step_cost = round(origin_cost / 2 + (b / 2) * (b ** 0.5))
+                step_cost = origin_cost / 2 + (b / 2) * (b ** 0.5)
             else:
                 step_cost = b
             if step_cost >= _die:  # treat ≥ die ceiling as impassable
                 continue
             new_cost = cost + step_cost
-            if new_cost < dist.get((nx, ny), 10**9):
+            if new_cost < dist.get((nx, ny), 1e18):
                 dist[(nx, ny)] = new_cost
                 prev[(nx, ny)] = (x, y)
                 heapq.heappush(heap, (new_cost, nx, ny))
 
     if (tx, ty) not in prev:
-        return None, 0
+        return None, 0.0
 
     path: list[tuple[int, int]] = []
     cur: tuple[int, int] | None = (tx, ty)

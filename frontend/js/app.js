@@ -555,9 +555,59 @@ function darkenHex(hex, amount) {
 
 function tileColor(tile) {
   const base = TERRAIN_COLORS[tile.terrain] ?? '#333';
-  if (tile.modifier === 'hills')    return darkenHex(base, 30);
-  if (tile.modifier === 'mountain') return darkenHex(base, 60);
+  if (tile.modifier === 'hills')    return darkenHex(base, 22);
+  if (tile.modifier === 'mountain') return darkenHex(base, 50);
   return base;
+}
+
+function drawTerrainSymbol(ctx, tile, tw, th) {
+  const px = tile.x * tw;
+  const py = tile.y * th;
+  const s  = Math.min(tw, th);
+
+  if (tile.modifier === 'hills') {
+    const r    = s * 0.17;
+    const midY = py + th * 0.65;
+    const cx   = px + tw * 0.5;
+    const gap  = r * 1.05;
+    ctx.lineWidth   = Math.max(0.5, s * 0.045);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillStyle   = 'rgba(255,255,255,0.20)';
+    for (const ox of [-gap, gap]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, midY, r, Math.PI, 0, false);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+  } else if (tile.modifier === 'mountain') {
+    const halfW    = s * 0.29;
+    const cx       = px + tw * 0.5;
+    const top      = py + th * 0.16;
+    const bot      = py + th * 0.84;
+    const snowLine = py + th * 0.40;
+    ctx.lineWidth   = Math.max(0.5, s * 0.045);
+    // Body
+    ctx.fillStyle   = 'rgba(255,255,255,0.18)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.50)';
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx + halfW, bot);
+    ctx.lineTo(cx - halfW, bot);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Snow cap
+    ctx.fillStyle   = 'rgba(255,255,255,0.55)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.0)';
+    ctx.beginPath();
+    ctx.moveTo(cx, top);
+    ctx.lineTo(cx + halfW * 0.43, snowLine);
+    ctx.lineTo(cx - halfW * 0.43, snowLine);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 function renderMap() {
@@ -586,6 +636,16 @@ function renderMap() {
       : tileColor(tile);
     ctx.fillRect(tile.x * tw, tile.y * th, Math.ceil(tw), Math.ceil(th));
   });
+
+  // Draw terrain modifier symbols (hills bumps, mountain triangles)
+  if (mapMode === 'terrain') {
+    G.tiles.forEach(tile => {
+      if (tile.x < x0 || tile.x > x1 || tile.y < y0 || tile.y > y1) return;
+      if (tile.modifier === 'hills' || tile.modifier === 'mountain') {
+        drawTerrainSymbol(ctx, tile, tw, th);
+      }
+    });
+  }
 
   // Draw rivers as lines (separate pass so they render on top of terrain fills)
   if (mapMode === 'terrain') {

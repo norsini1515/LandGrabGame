@@ -47,7 +47,7 @@ class Tile(BaseModel):
     modifier: ModifierType = ModifierType.FLAT
     elevation: float = Field(ge=0.0, le=1.0)
     hills_scalar: float = Field(default=0.0, ge=0.0, le=1.0)
-    move_cost: int | None = None  # None = impassable
+    move_cost: float | None = None  # None = impassable
     is_river: bool = False
 
 
@@ -63,8 +63,8 @@ class Player(BaseModel):
     name: str
     position: tuple[int, int]
     gold: int = 100
-    movement_remaining: int = 0
-    movement_total: int = 0
+    movement_remaining: float = 0
+    movement_total: float = 0
 
 
 class GameState(BaseModel):
@@ -109,8 +109,8 @@ class MoveResult(BaseModel):
     new_position: tuple[int, int]
     terrain: TerrainType
     modifier: ModifierType
-    move_cost: int
-    movement_remaining: int
+    move_cost: float
+    movement_remaining: float
     message: str
     game_state: GameState
 
@@ -119,8 +119,8 @@ class MoveToResult(BaseModel):
     new_position: tuple[int, int]
     terrain: TerrainType
     modifier: ModifierType
-    total_cost: int
-    movement_remaining: int
+    total_cost: float
+    movement_remaining: float
     path: list[tuple[int, int]]
     message: str
     game_state: GameState

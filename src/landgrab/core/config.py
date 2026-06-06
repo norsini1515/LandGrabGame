@@ -77,37 +77,37 @@ def die_sides() -> int:
 
 
 @lru_cache(maxsize=1)
-def combination_tuning_c() -> int:
-    return _int(_terrain(), "constants", "combination_tuning_c")
+def combination_tuning_c() -> float:
+    return _float(_terrain(), "constants", "combination_tuning_c")
 
 
 @lru_cache(maxsize=1)
-def terrain_base_costs() -> dict[str, int | None]:
+def terrain_base_costs() -> dict[str, float | None]:
     """Base movement cost per terrain string key, or None if impassable."""
     tc = _terrain()
-    costs: dict[str, int | None] = {}
+    costs: dict[str, float | None] = {}
     for sec, vals in tc.items():
         if sec.startswith("terrain.") and "cost" in vals:
             name = sec[len("terrain."):]
-            costs[name] = int(vals["cost"])
+            costs[name] = float(vals["cost"])
     # ocean is always impassable (not listed as a terrain section, handled separately)
     costs.setdefault("ocean", None)
     return costs
 
 
 @lru_cache(maxsize=1)
-def combination_costs() -> dict[str, dict[str, int]]:
+def combination_costs() -> dict[str, dict[str, float]]:
     """combination_costs()[dominant][modifier] = total move cost."""
     tc = _terrain()
-    result: dict[str, dict[str, int]] = {}
+    result: dict[str, dict[str, float]] = {}
     for sec, vals in tc.items():
         if sec.startswith("combination."):
             dom = sec[len("combination."):]
-            result[dom] = {k: int(v) for k, v in vals.items()}
+            result[dom] = {k: float(v) for k, v in vals.items()}
     return result
 
 
-def get_move_cost(terrain: str, modifier: str = "flat") -> int | None:
+def get_move_cost(terrain: str, modifier: str = "flat") -> float | None:
     """Return movement cost for a terrain+modifier combo, or None if impassable."""
     if terrain == "ocean":
         return None
@@ -118,7 +118,7 @@ def get_move_cost(terrain: str, modifier: str = "flat") -> int | None:
     dom_table = combos.get(modifier)
     if dom_table and terrain in dom_table:
         cost = dom_table[terrain]
-        # frozen_tundra+mountain=8 = die ceiling, treat as impassable
+        # treat costs at or above die ceiling as impassable
         if cost >= die_sides():
             return None
         return cost
@@ -345,9 +345,9 @@ def edge_fade_start() -> float:
 
 
 @lru_cache(maxsize=1)
-def river_movement_penalty() -> int:
+def river_movement_penalty() -> float:
     tc = _terrain()
-    return int(tc.get("map.river", {}).get("movement_penalty", "1"))
+    return float(tc.get("map.river", {}).get("movement_penalty", "1"))
 
 
 @lru_cache(maxsize=1)
