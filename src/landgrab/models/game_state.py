@@ -2,27 +2,60 @@
 
 from __future__ import annotations
 
-from enum import Enum
-from typing import Any
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
 
 
-class TerrainType(str, Enum):
-    OCEAN = "ocean"
-    COAST = "coast"
-    PLAINS = "plains"
-    FOREST = "forest"
-    HILLS = "hills"
-    MOUNTAINS = "mountains"
-    RIVER = "river"
+class TerrainType(StrEnum):
+    # Water
+    OCEAN       = "ocean"
+    # Coastal
+    COASTAL     = "coastal"
+    FLOODPLAIN  = "floodplain"
+    CLIFF_COAST = "cliff_coast"
+    # Base terrains
+    PLAIN       = "plain"
+    GRASSLAND   = "grassland"
+    FOREST      = "forest"
+    THICK_FOREST = "thick_forest"
+    JUNGLE      = "jungle"
+    MARSH       = "marsh"
+    DESERT      = "desert"
+    DEEP_DESERT = "deep_desert"
+    TUNDRA      = "tundra"
+    FROZEN_TUNDRA = "frozen_tundra"
+    # Overlay
+    RIVER       = "river"
+
+
+class ModifierType(StrEnum):
+    FLAT     = "flat"
+    HILLS    = "hills"
+    MOUNTAIN = "mountain"
+
+
+class TurnPhase(StrEnum):
+    ROLL = "roll"
+    MOVE = "move"
 
 
 class Tile(BaseModel):
     x: int
     y: int
     terrain: TerrainType
+    modifier: ModifierType = ModifierType.FLAT
     elevation: float = Field(ge=0.0, le=1.0)
-    # Future: owner, resources, structures
+    hills_scalar: float = Field(default=0.0, ge=0.0, le=1.0)
+    move_cost: int | None = None  # None = impassable
+    is_river: bool = False
+
+
+class WorldSettings(BaseModel):
+    climate:       str = "temperate"
+    precipitation: str = "normal"
+    age:           str = "old"
+    fragmentation: str = "default"
 
 
 class Player(BaseModel):
@@ -30,6 +63,8 @@ class Player(BaseModel):
     name: str
     position: tuple[int, int]
     gold: int = 100
+    movement_remaining: int = 0
+    movement_total: int = 0
 
 
 class GameState(BaseModel):
@@ -37,30 +72,62 @@ class GameState(BaseModel):
     player: Player
     map_width: int
     map_height: int
-    # Tiles are stored as a flat list, row-major order
     tiles: list[Tile]
     turn: int = 1
+    phase: TurnPhase = TurnPhase.ROLL
     seed: int
+    world: WorldSettings = Field(default_factory=WorldSettings)
 
 
 class NewGameRequest(BaseModel):
     player_name: str
-    map_width: int = Field(default=40, ge=10, le=100)
-    map_height: int = Field(default=30, ge=10, le=80)
+    map_width: int = Field(default=60, ge=10, le=200)
+    map_height: int = Field(default=40, ge=10, le=150)
     seed: int | None = None
+    world: WorldSettings = Field(default_factory=WorldSettings)
+
+
+class RollResult(BaseModel):
+    roll: int
+    movement_total: int
+    message: str
+    game_state: GameState
 
 
 class MoveRequest(BaseModel):
     game_id: str
-    # dx/dy: -1, 0, or 1
     dx: int = Field(ge=-1, le=1)
     dy: int = Field(ge=-1, le=1)
 
 
+class MoveToRequest(BaseModel):
+    tx: int
+    ty: int
+
+
 class MoveResult(BaseModel):
     new_position: tuple[int, int]
-    roll: int
     terrain: TerrainType
+    modifier: ModifierType
+    move_cost: int
+    movement_remaining: int
+    message: str
+    game_state: GameState
+
+
+class MoveToResult(BaseModel):
+    new_position: tuple[int, int]
+    terrain: TerrainType
+    modifier: ModifierType
+    total_cost: int
+    movement_remaining: int
+    path: list[tuple[int, int]]
+    message: str
+    game_state: GameState
+
+
+class EndTurnResult(BaseModel):
+    turn: int
     message: str
     game_state: GameState
 
@@ -80,6 +147,5 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
-# Utility to build a dict from tiles for fast lookup
 def tile_map(state: GameState) -> dict[tuple[int, int], Tile]:
     return {(t.x, t.y): t for t in state.tiles}
