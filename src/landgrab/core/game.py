@@ -11,24 +11,27 @@ from pathlib import Path
 from landgrab.core.dice import roll
 from landgrab.core.map_gen import generate_map
 from landgrab.models.game_state import (
+    EndTurnResult,
     GameState,
     MoveResult,
     Player,
+    RollResult,
     SavedGame,
+    TERRAIN_MOVE_COST,
     TerrainType,
+    TurnPhase,
     tile_map,
 )
 
 SAVES_DIR = Path("saves")
 
 _TERRAIN_MESSAGES: dict[TerrainType, str] = {
-    TerrainType.OCEAN: "You wade into the open sea — impassable.",
-    TerrainType.COAST: "You reach the rocky coastline.",
-    TerrainType.PLAINS: "You stride across open plains.",
-    TerrainType.FOREST: "You push through dense woodland.",
-    TerrainType.HILLS: "You climb the rolling hills.",
+    TerrainType.COAST:     "You reach the rocky coastline.",
+    TerrainType.PLAINS:    "You stride across open plains.",
+    TerrainType.FOREST:    "You push through dense woodland.",
+    TerrainType.HILLS:     "You climb the rolling hills.",
     TerrainType.MOUNTAINS: "You struggle up the steep mountain slopes.",
-    TerrainType.RIVER: "You ford the rushing river.",
+    TerrainType.RIVER:     "You ford the rushing river.",
 }
 
 
@@ -37,9 +40,8 @@ def new_game(player_name: str, width: int, height: int, seed: int | None) -> Gam
     resolved_seed = seed if seed is not None else random.randint(0, 2**31)
     tiles = generate_map(width, height, resolved_seed)
 
-    # Spawn player on the first plains tile near the center
     cx, cy = width // 2, height // 2
-    spawn = _find_spawn(tiles, cx, cy, width, height)
+    spawn = _find_spawn(tiles, cx, cy)
 
     player = Player(id=str(uuid.uuid4())[:8], name=player_name, position=spawn)
     state = GameState(
@@ -48,6 +50,7 @@ def new_game(player_name: str, width: int, height: int, seed: int | None) -> Gam
         map_width=width,
         map_height=height,
         tiles=tiles,
+        phase=TurnPhase.ROLL,
         seed=resolved_seed,
     )
     _save(state)
@@ -81,53 +84,118 @@ def list_saves() -> list[SavedGame]:
     return saves
 
 
+def roll_for_turn(game_id: str) -> RollResult:
+    state = load_game(game_id)
+    if state.phase != TurnPhase.ROLL:
+        raise ValueError("Already rolled this turn.")
+
+    d8 = roll(8)
+    state.player.movement_total = d8
+    state.player.movement_remaining = d8
+    state.phase = TurnPhase.MOVE
+    _save(state)
+
+    return RollResult(
+        roll=d8,
+        movement_total=d8,
+        message=f"You rolled a {d8}! {d8} movement points this turn.",
+        game_state=state,
+    )
+
+
 def move(game_id: str, dx: int, dy: int) -> MoveResult:
     state = load_game(game_id)
     tmap = tile_map(state)
 
-    d8 = roll(8)
+    if state.phase != TurnPhase.MOVE:
+        raise ValueError("Roll the dice before moving.")
+
+    if state.player.movement_remaining <= 0:
+        raise ValueError("No movement points remaining. End your turn.")
+
     px, py = state.player.position
     nx = max(0, min(state.map_width - 1, px + dx))
     ny = max(0, min(state.map_height - 1, py + dy))
 
-    target = tmap.get((nx, ny))
-    if target is None or target.terrain == TerrainType.OCEAN:
-        msg = "The ocean blocks your path." if target else "Edge of the world."
+    # No-op wait move
+    if dx == 0 and dy == 0:
         return MoveResult(
             new_position=(px, py),
-            roll=d8,
             terrain=tmap[(px, py)].terrain,
-            message=msg,
+            move_cost=0,
+            movement_remaining=state.player.movement_remaining,
+            message="You hold your position.",
+            game_state=state,
+        )
+
+    target = tmap.get((nx, ny))
+    cost = TERRAIN_MOVE_COST.get(target.terrain) if target else None
+
+    if target is None or cost is None:
+        label = "The ocean blocks your path." if (target and target.terrain == TerrainType.OCEAN) else "Edge of the world."
+        return MoveResult(
+            new_position=(px, py),
+            terrain=tmap[(px, py)].terrain,
+            move_cost=0,
+            movement_remaining=state.player.movement_remaining,
+            message=label,
+            game_state=state,
+        )
+
+    if cost > state.player.movement_remaining:
+        return MoveResult(
+            new_position=(px, py),
+            terrain=tmap[(px, py)].terrain,
+            move_cost=0,
+            movement_remaining=state.player.movement_remaining,
+            message=f"Not enough movement. {target.terrain.value.title()} costs {cost}, you have {state.player.movement_remaining} left.",
             game_state=state,
         )
 
     state.player.position = (nx, ny)
-    state.turn += 1
+    state.player.movement_remaining -= cost
     _save(state)
 
     terrain = target.terrain
-    msg = f"(d8 → {d8}) " + _TERRAIN_MESSAGES.get(terrain, "You move forward.")
+    remaining = state.player.movement_remaining
+    flavor = _TERRAIN_MESSAGES.get(terrain, "You move forward.")
+    msg = f"{flavor} (cost: {cost} · remaining: {remaining})"
+
     return MoveResult(
         new_position=(nx, ny),
-        roll=d8,
         terrain=terrain,
+        move_cost=cost,
+        movement_remaining=remaining,
         message=msg,
         game_state=state,
     )
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+def end_turn(game_id: str) -> EndTurnResult:
+    state = load_game(game_id)
+    state.turn += 1
+    state.phase = TurnPhase.ROLL
+    state.player.movement_remaining = 0
+    state.player.movement_total = 0
+    _save(state)
 
-def _find_spawn(tiles: list, cx: int, cy: int, width: int, height: int) -> tuple[int, int]:
-    """Return the nearest plains/coast tile to (cx, cy) as spawn point."""
+    return EndTurnResult(
+        turn=state.turn,
+        message=f"Turn {state.turn} begins. Roll the dice!",
+        game_state=state,
+    )
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def _find_spawn(tiles: list, cx: int, cy: int) -> tuple[int, int]:
     preferred = {TerrainType.PLAINS, TerrainType.COAST}
     by_dist = sorted(
         [t for t in tiles if t.terrain in preferred],
         key=lambda t: abs(t.x - cx) + abs(t.y - cy),
     )
     if by_dist:
-        t = by_dist[0]
-        return (t.x, t.y)
+        return (by_dist[0].x, by_dist[0].y)
     return (cx, cy)
 
 
